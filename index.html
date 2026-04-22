@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>NandaEdge Advisor — Global Elite Dashboard v2.0</title>
+<style>
+:root {
+  --bg:#0d1117; --card:#161b22; --card2:#1c2128; --border:#30363d;
+  --green:#3fb950; --red:#f85149; --yellow:#d29922; --blue:#58a6ff;
+  --purple:#bc8cff; --orange:#f0883e; --teal:#39d353;
+  --text:#e6edf3; --muted:#8b949e; --accent:#1f6feb;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* HEADER */
+header{background:var(--card);border-bottom:1px solid var(--border);padding:10px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
+.logo{font-size:17px;font-weight:800;letter-spacing:1px;color:var(--blue);}
+.logo span{color:var(--green);}
+.logo sub{font-size:9px;color:var(--muted);font-weight:400;letter-spacing:2px;display:block;margin-top:-2px;}
+.header-right{display:flex;gap:20px;align-items:center;}
+.market-status{display:flex;gap:6px;align-items:center;font-size:11px;font-weight:700;}
+.dot{width:7px;height:7px;border-radius:50%;animation:pulse 2s infinite;}
+.dot-green{background:var(--green);}
+.dot-red{background:var(--red);}
+
+/* BARS */
+.index-bar{background:#0a0f17;border-bottom:1px solid var(--border);display:flex;overflow-x:auto;padding:0 12px;}
+.index-bar.asia-bar{background:#0b1019;}
+.idx{padding:7px 16px;border-right:1px solid var(--border);white-space:nowrap;display:flex;flex-direction:column;align-items:center;min-width:90px;}
+.idx .lbl{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;}
+.idx .val{font-size:13px;font-weight:700;margin-top:1px;}
+.bar-label{padding:7px 12px;display:flex;align-items:center;font-size:9px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1.5px;border-right:1px solid var(--border);white-space:nowrap;}
+
+/* FEAR GREED */
+.fg-bar{height:6px;width:80px;border-radius:3px;background:linear-gradient(90deg,var(--red),var(--yellow),var(--green));position:relative;margin-top:3px;}
+.fg-needle{width:3px;height:10px;background:#fff;border-radius:2px;position:absolute;top:-2px;transform:translateX(-50%);}
+
+/* LAYOUT */
+.main{padding:16px 20px;display:grid;gap:16px;}
+.sec-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);margin-bottom:10px;display:flex;align-items:center;gap:8px;}
+.sec-title::after{content:'';flex:1;height:1px;background:var(--border);}
+.card{background:var(--card);border:1px solid var(--border);border-radius:8px;overflow:hidden;}
+.card-hdr{padding:11px 16px;border-bottom:1px solid var(--border);font-weight:600;font-size:13px;display:flex;justify-content:space-between;align-items:center;}
+
+/* TABLE */
+table{width:100%;border-collapse:collapse;}
+th{padding:8px 12px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid var(--border);background:#0d1117;white-space:nowrap;}
+td{padding:10px 12px;border-bottom:1px solid #1c2128;vertical-align:middle;}
+tr:last-child td{border-bottom:none;}
+tr:hover td{background:#1c2128;transition:.12s;}
+.sym{font-weight:800;font-size:14px;color:var(--blue);}
+.co{font-size:10px;color:var(--muted);margin-top:1px;}
+.up{color:var(--green);}
+.dn{color:var(--red);}
+.nt{color:var(--yellow);}
+
+/* BADGES */
+.badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;}
+.b-bull{background:rgba(63,185,80,.15);color:var(--green);}
+.b-bear{background:rgba(248,81,73,.15);color:var(--red);}
+.b-neut{background:rgba(210,153,34,.15);color:var(--yellow);}
+.b-blue{background:rgba(88,166,255,.12);color:var(--blue);}
+.sig{display:inline-block;padding:3px 10px;border-radius:4px;font-size:10px;font-weight:800;letter-spacing:.5px;}
+.s-buy{background:rgba(63,185,80,.2);color:var(--green);border:1px solid rgba(63,185,80,.4);}
+.s-sell{background:rgba(248,81,73,.2);color:var(--red);border:1px solid rgba(248,81,73,.4);}
+.s-hold{background:rgba(210,153,34,.2);color:var(--yellow);border:1px solid rgba(210,153,34,.4);}
+.s-watch{background:rgba(88,166,255,.15);color:var(--blue);border:1px solid rgba(88,166,255,.3);}
+
+/* STARS */
+.stars{color:var(--yellow);font-size:11px;letter-spacing:1px;}
+
+/* SCORE PILL */
+.score{display:inline-block;min-width:28px;text-align:center;padding:2px 6px;border-radius:4px;font-weight:800;font-size:11px;}
+.sc-hi{background:rgba(63,185,80,.2);color:var(--green);}
+.sc-mid{background:rgba(210,153,34,.2);color:var(--yellow);}
+.sc-lo{background:rgba(248,81,73,.2);color:var(--red);}
+
+/* GRADE */
+.grade{font-weight:800;font-size:11px;}
+.ga{color:var(--green);}
+.gb{color:#79c0ff;}
+.gc{color:var(--yellow);}
+.gd{color:var(--red);}
+
+/* MACRO GRID */
+.macro-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding:14px;}
+.macro-item{background:var(--card2);border-radius:6px;padding:11px 13px;}
+.macro-lbl{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;}
+.macro-val{font-size:15px;font-weight:800;}
+.macro-sub{font-size:10px;color:var(--muted);margin-top:2px;}
+
+/* VIX TABLE */
+.vix-table{width:100%;padding:12px 14px;}
+.vix-row{display:flex;gap:8px;align-items:center;padding:5px 8px;border-radius:5px;margin-bottom:4px;}
+.vix-row:last-child{margin-bottom:0;}
+.vix-range{min-width:70px;font-weight:700;font-size:12px;}
+.vix-regime{flex:1;font-size:11px;color:var(--muted);}
+.vix-active{background:var(--card2);border:1px solid var(--accent);}
+
+/* TRADE GRID */
+.trade-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;}
+.tc{background:var(--card);border:1px solid var(--border);border-radius:8px;overflow:hidden;}
+.tc-hdr{padding:11px 14px;display:flex;justify-content:space-between;align-items:flex-start;border-bottom:1px solid var(--border);}
+.tc-sym{font-size:17px;font-weight:900;}
+.tc-price{font-size:16px;font-weight:800;text-align:right;}
+.tc-body{padding:12px 14px;display:grid;gap:9px;}
+.tc-sec{background:var(--card2);border-radius:6px;padding:9px 11px;}
+.tc-sec-title{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:7px;display:flex;justify-content:space-between;align-items:center;}
+.tc-row{display:flex;justify-content:space-between;margin-bottom:3px;font-size:11px;}
+.tc-row:last-child{margin-bottom:0;}
+.tl{color:var(--muted);}
+.tv{font-weight:700;}
+.tv-up{color:var(--green);}
+.tv-dn{color:var(--red);}
+.tv-bl{color:var(--blue);}
+.tv-pu{color:var(--purple);}
+.opt-tag{font-size:10px;padding:1px 7px;border-radius:3px;background:rgba(188,140,255,.15);color:var(--purple);border:1px solid rgba(188,140,255,.3);font-weight:700;}
+.conviction{display:flex;gap:8px;align-items:center;padding:8px 11px;border-top:1px solid var(--border);}
+.risk-tag{font-size:10px;padding:2px 8px;border-radius:4px;font-weight:700;}
+.rt-low{background:rgba(63,185,80,.15);color:var(--green);}
+.rt-med{background:rgba(210,153,34,.15);color:var(--yellow);}
+.rt-hi{background:rgba(248,81,73,.15);color:var(--red);}
+.rt-spec{background:rgba(240,136,62,.15);color:var(--orange);}
+
+/* THREE COL */
+.three-col{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;}
+.two-col{display:grid;grid-template-columns:1fr 1.5fr;gap:14px;}
+
+/* FLOW */
+.flow-list{padding:12px 14px;display:grid;gap:8px;}
+.flow-item{display:flex;gap:10px;align-items:center;background:var(--card2);border-radius:6px;padding:9px 11px;}
+.flow-type{font-size:10px;font-weight:800;padding:2px 8px;border-radius:3px;min-width:42px;text-align:center;}
+.call-f{background:rgba(63,185,80,.2);color:var(--green);}
+.put-f{background:rgba(248,81,73,.2);color:var(--red);}
+.flow-sym{font-weight:800;color:var(--blue);font-size:12px;}
+.flow-detail{flex:1;color:var(--muted);font-size:11px;}
+.flow-prem{font-weight:800;color:var(--purple);font-size:12px;}
+
+/* ANALYST FEED */
+.analyst-list{padding:12px 14px;display:grid;gap:8px;}
+.analyst-item{background:var(--card2);border-radius:6px;padding:9px 12px;display:flex;gap:10px;align-items:flex-start;}
+.analyst-icon{width:28px;height:28px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:11px;flex-shrink:0;}
+.analyst-body{flex:1;}
+.analyst-meta{font-size:10px;color:var(--muted);margin-bottom:2px;}
+.analyst-text{font-size:12px;line-height:1.4;}
+.upgrade{color:var(--green);}
+.downgrade{color:var(--red);}
+.initiate{color:var(--blue);}
+
+/* NEWS */
+.news-list{padding:12px 14px;display:grid;gap:10px;}
+.news-item{border-left:3px solid var(--border);padding-left:10px;}
+.ni-bull{border-color:var(--green);}
+.ni-bear{border-color:var(--red);}
+.ni-neut{border-color:var(--yellow);}
+.news-meta{font-size:10px;color:var(--muted);margin-bottom:2px;display:flex;gap:6px;align-items:center;}
+.news-text{font-size:12px;line-height:1.4;}
+.ntag{font-size:9px;font-weight:800;padding:1px 5px;border-radius:3px;}
+.nt-bull{background:rgba(63,185,80,.2);color:var(--green);}
+.nt-bear{background:rgba(248,81,73,.2);color:var(--red);}
+.nt-neut{background:rgba(210,153,34,.2);color:var(--yellow);}
+.polarity{font-size:10px;font-weight:800;padding:1px 5px;border-radius:3px;}
+.pol-p{background:rgba(63,185,80,.15);color:var(--green);}
+.pol-n{background:rgba(248,81,73,.15);color:var(--red);}
+
+/* RISK */
+.risk-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:13px;}
+.risk-item{background:var(--card2);border-radius:6px;padding:11px;}
+.risk-lbl{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;}
+.risk-val{font-size:14px;font-weight:800;}
+
+/* SOURCES BAR */
+.sources-bar{display:flex;flex-wrap:wrap;gap:6px;padding:10px 14px;border-top:1px solid var(--border);}
+.src-tag{font-size:9px;padding:2px 8px;border-radius:3px;background:rgba(88,166,255,.1);color:var(--blue);border:1px solid rgba(88,166,255,.2);font-weight:600;}
+
+/* DISCLAIMER */
+.disclaimer{background:var(--card);border:1px solid var(--border);border-radius:6px;padding:11px 14px;font-size:10px;color:var(--muted);line-height:1.6;}
+.disclaimer strong{color:var(--red);}
+
+/* LOADING */
+.loading-row td{text-align:center;padding:22px;color:var(--muted);}
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--blue);border-top-color:transparent;border-radius:50%;animation:spin .8s linear infinite;margin-right:7px;vertical-align:middle;}
+
+@media(max-width:1100px){.three-col{grid-template-columns:1fr 1fr;}.macro-grid{grid-template-columns:repeat(2,1fr);}}
+@media(max-width:750px){.three-col,.two-col{grid-template-columns:1fr;}.macro-grid{grid-template-columns:1fr 1fr;}.trade-grid{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header>
+  <div class="logo">Nanda<span>Edge</span> Advisor <sub>GLOBAL ELITE v2.0</sub></div>
+  <div class="header-right">
+    <div class="market-status">
+      <div class="dot dot-green" id="mkt-dot"></div>
+      <span id="mkt-label" style="color:var(--green);">LOADING...</span>
+    </div>
+    <div style="color:var(--muted);font-size:11px;" id="clock"></div>
+    <button onclick="refresh()" style="background:var(--accent);border:none;color:#fff;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:11px;font-weight:700;">↺ Refresh</button>
+  </div>
+</header>
+
+<!-- US MARKET BAR -->
+<div class="index-bar" id="us-bar">
+  <div class="bar-label">US</div>
+  <div class="idx"><div class="lbl">S&P 500</div><div class="val" id="spx">—</div></div>
+  <div class="idx"><div class="lbl">NASDAQ</div><div class="val" id="ixic">—</div></div>
+  <div class="idx"><div class="lbl">DOW</div><div class="val" id="dji">—</div></div>
+  <div class="idx"><div class="lbl">Russell 2K</div><div class="val" id="rut">—</div></div>
+  <div class="idx"><div class="lbl">VIX</div><div class="val" id="vix">—</div></div>
+  <div class="idx"><div class="lbl">10Y Yield</div><div class="val" id="tnx">—</div></div>
+  <div class="idx"><div class="lbl">DXY</div><div class="val" id="dxy">—</div></div>
+  <div class="idx"><div class="lbl">Oil (WTI)</div><div class="val" id="oil">—</div></div>
+  <div class="idx"><div class="lbl">Gold</div><div class="val" id="gold">—</div></div>
+  <div class="idx"><div class="lbl">BTC</div><div class="val" id="btc">—</div></div>
+  <div class="idx">
+    <div class="lbl">Fear &amp; Greed</div>
+    <div class="val nt" id="fg-val">62 — Greed</div>
+    <div class="fg-bar"><div class="fg-needle" id="fg-needle" style="left:62%;"></div></div>
+  </div>
+</div>
+
+<!-- ASIA / EUROPE BAR -->
+<div class="index-bar asia-bar">
+  <div class="bar-label">ASIA</div>
+  <div class="idx"><div class="lbl">Nikkei</div><div class="val nt">—</div></div>
+  <div class="idx"><div class="lbl">Hang Seng</div><div class="val nt">—</div></div>
+  <div class="idx"><div class="lbl">Shanghai</div><div class="val nt">—</div></div>
+  <div class="bar-label" style="margin-left:8px;">EUROPE</div>
+  <div class="idx"><div class="lbl">DAX</div><div class="val nt">—</div></div>
+  <div class="idx"><div class="lbl">FTSE 100</div><div class="val nt">—</div></div>
+  <div class="idx"><div class="lbl">CAC 40</div><div class="val nt">—</div></div>
+  <div class="bar-label" style="margin-left:8px;">CRYPTO</div>
+  <div class="idx"><div class="lbl">ETH</div><div class="val" id="eth">—</div></div>
+  <div class="idx"><div class="lbl">SOL</div><div class="val nt">—</div></div>
+</div>
+
+<div class="main">
+
+<!-- MACRO REGIME -->
+<div>
+  <div class="sec-title">Macro &amp; Market Regime</div>
+  <div class="card">
+    <div class="macro-grid">
+      <div class="macro-item">
+        <div class="macro-lbl">VIX Regime</div>
+        <div class="macro-val up" id="vix-regime">Normal</div>
+        <div class="macro-sub" id="vix-sub">All strategies valid</div>
+      </div>
+      <div class="macro-item">
+        <div class="macro-lbl">Market Regime</div>
+        <div class="macro-val" style="color:var(--blue);">Risk-On</div>
+        <div class="macro-sub">Mid-cycle expansion</div>
+      </div>
+      <div class="macro-item">
+        <div class="macro-lbl">Yield Curve</div>
+        <div class="macro-val nt">Flat</div>
+        <div class="macro-sub">2Y/10Y spread: +12bps</div>
+      </div>
+      <div class="macro-item">
+        <div class="macro-lbl">Fed Stance</div>
+        <div class="macro-val" style="color:var(--yellow);">Hold</div>
+        <div class="macro-sub">FOMC: May 7, 2026</div>
+      </div>
+      <div class="macro-item">
+        <div class="macro-lbl">Cycle Stage</div>
+        <div class="macro-val" style="color:var(--blue);">Mid Cycle</div>
+        <div class="macro-sub">Tech &amp; Industrials leading</div>
+      </div>
+      <div class="macro-item">
+        <div class="macro-lbl">Dollar (DXY)</div>
+        <div class="macro-val nt" id="dxy-regime">Neutral</div>
+        <div class="macro-sub">Slight multinational headwind</div>
+      </div>
+      <div class="macro-item">
+        <div class="macro-lbl">Portfolio Heat</div>
+        <div class="macro-val nt">MEDIUM</div>
+        <div class="macro-sub">~9% total risk deployed</div>
+      </div>
+      <div class="macro-item">
+        <div class="macro-lbl">Earnings This Week</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px;">
+          <span class="badge b-neut">INTC Apr 25</span>
+          <span class="badge b-bull">AMD Apr 30</span>
+        </div>
+      </div>
+    </div>
+    <!-- VIX Regime Table -->
+    <div style="border-top:1px solid var(--border);padding:10px 14px;">
+      <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">VIX Regime Guide</div>
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;" id="vix-guide">
+        <div class="vix-row" style="flex-direction:column;background:rgba(63,185,80,.08);border-radius:5px;padding:6px 8px;"><div class="vix-range up">&lt;15</div><div class="vix-regime">Complacency — Sell IV</div></div>
+        <div class="vix-row vix-active" style="flex-direction:column;background:rgba(88,166,255,.08);border-radius:5px;padding:6px 8px;" id="vix-active-cell"><div class="vix-range" style="color:var(--blue);">15–20</div><div class="vix-regime">Normal ✓ Active</div></div>
+        <div class="vix-row" style="flex-direction:column;background:rgba(210,153,34,.08);border-radius:5px;padding:6px 8px;"><div class="vix-range nt">20–28</div><div class="vix-regime">Elevated — Reduce size</div></div>
+        <div class="vix-row" style="flex-direction:column;background:rgba(248,81,73,.08);border-radius:5px;padding:6px 8px;"><div class="vix-range dn">28–35</div><div class="vix-regime">High Fear — Dip buy</div></div>
+        <div class="vix-row" style="flex-direction:column;background:rgba(248,81,73,.15);border-radius:5px;padding:6px 8px;"><div class="vix-range dn">&gt;35</div><div class="vix-regime">Panic — Hedges only</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- WATCHLIST -->
+<div>
+  <div class="sec-title">Watchlist — Live Prices &amp; Intelligence</div>
+  <div class="card">
+    <div class="card-hdr">
+      <span>9 Tickers — Real-Time via Yahoo Finance</span>
+      <span style="font-size:10px;color:var(--muted);">Updated: <span id="update-time">—</span> &nbsp;|&nbsp; Auto-refresh every 60s</span>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Ticker</th>
+          <th>Price</th>
+          <th>Chg%</th>
+          <th>Volume</th>
+          <th>52W Range</th>
+          <th>TipRanks</th>
+          <th>SA Quant</th>
+          <th>Smart Score</th>
+          <th>Sentiment</th>
+          <th>Signal</th>
+          <th>Conviction</th>
+        </tr>
+      </thead>
+      <tbody id="watchlist-body">
+        <tr class="loading-row"><td colspan="11"><span class="spinner"></span>Fetching live prices from Yahoo Finance...</td></tr>
+      </tbody>
+    </table>
+    <div class="sources-bar">
+      <span style="font-size:9px;color:var(--muted);font-weight:700;margin-right:4px;">DATA:</span>
+      <span class="src-tag">Alpha Vantage MCP</span><span class="src-tag">Yahoo Finance</span>
+      <span class="src-tag">TipRanks</span><span class="src-tag">Seeking Alpha Quant</span>
+      <span class="src-tag">TradingView AI</span><span class="src-tag">WallStreetZen</span>
+      <span class="src-tag">Benzinga</span><span class="src-tag">CBOE</span>
+    </div>
+  </div>
+</div>
+
+<!-- TRADE PLANS -->
+<div>
+  <div class="sec-title">Daily Trade Plans — 5-Layer Analysis</div>
+  <div class="trade-grid" id="trade-grid"></div>
+</div>
+
+<!-- OPTIONS + ANALYST + RISK ROW -->
+<div class="three-col">
+
+  <!-- OPTIONS FLOW -->
+  <div>
+    <div class="sec-title">Unusual Options Flow</div>
+    <div class="card">
+      <div class="card-hdr"><span>Sweeps &amp; Blocks &gt;$500K</span><span style="font-size:10px;color:var(--muted);">CBOE / Benzinga</span></div>
+      <div class="flow-list" id="options-flow"></div>
+    </div>
+  </div>
+
+  <!-- ANALYST FEED -->
+  <div>
+    <div class="sec-title">Analyst Activity — Last 48h</div>
+    <div class="card">
+      <div class="card-hdr"><span>Upgrades / Downgrades / New PTs</span><span style="font-size:10px;color:var(--muted);">TipRanks · Benzinga</span></div>
+      <div class="analyst-list" id="analyst-feed"></div>
+    </div>
+  </div>
+
+  <!-- RISK DASHBOARD -->
+  <div>
+    <div class="sec-title">Risk Dashboard</div>
+    <div class="card">
+      <div class="risk-grid">
+        <div class="risk-item"><div class="risk-lbl">Portfolio Heat</div><div class="risk-val nt">MEDIUM</div></div>
+        <div class="risk-item"><div class="risk-lbl">Max Single Position</div><div class="risk-val" style="color:var(--blue);">5%</div></div>
+        <div class="risk-item"><div class="risk-lbl">Options Premium Risk</div><div class="risk-val" style="color:var(--blue);">3% max</div></div>
+        <div class="risk-item"><div class="risk-lbl">Drawdown Limit</div><div class="risk-val up">-5% ✓</div></div>
+        <div class="risk-item"><div class="risk-lbl">Put/Call Ratio</div><div class="risk-val nt">0.82</div></div>
+        <div class="risk-item"><div class="risk-lbl">SKEW Index</div><div class="risk-val nt">132</div></div>
+      </div>
+      <div style="padding:0 13px 13px;">
+        <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:7px;margin-top:4px;">Drawdown Protocol</div>
+        <div style="display:grid;gap:4px;">
+          <div style="display:flex;justify-content:space-between;font-size:10px;padding:4px 8px;background:rgba(63,185,80,.08);border-radius:4px;"><span class="up">-5%</span><span style="color:var(--muted);">Review + tighten stops</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:10px;padding:4px 8px;background:rgba(210,153,34,.08);border-radius:4px;"><span class="nt">-10%</span><span style="color:var(--muted);">Reduce exposure 50%</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:10px;padding:4px 8px;background:rgba(248,81,73,.08);border-radius:4px;"><span class="dn">-15%</span><span style="color:var(--muted);">Move to cash + hedges</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:10px;padding:4px 8px;background:rgba(248,81,73,.18);border-radius:4px;"><span class="dn">-20%</span><span style="color:var(--muted);">Full preservation mode</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- NEWS + TOP ANALYSTS ROW -->
+<div class="two-col">
+
+  <!-- NEWS -->
+  <div>
+    <div class="sec-title">Market Intelligence — Top Headlines</div>
+    <div class="card">
+      <div class="card-hdr"><span>News Feed</span><span style="font-size:10px;color:var(--muted);">Bloomberg · Reuters · CNBC · Benzinga · SA</span></div>
+      <div class="news-list" id="news-feed"></div>
+    </div>
+  </div>
+
+  <!-- TOP ANALYSTS -->
+  <div>
+    <div class="sec-title">Top Analysts to Track</div>
+    <div class="card">
+      <div class="card-hdr"><span>Global Elite Forecasters — 2026</span><span style="font-size:10px;color:var(--muted);">TipRanks · WallStreetZen</span></div>
+      <table>
+        <thead>
+          <tr>
+            <th>Analyst</th>
+            <th>Firm</th>
+            <th>Specialty</th>
+            <th>Known For</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td><div style="font-weight:700;color:var(--blue);">Tom Lee</div></td><td style="color:var(--muted);">Fundstrat</td><td><span class="badge b-bull">Macro</span></td><td style="color:var(--muted);font-size:11px;">Broad market, highly accurate S&P calls</td></tr>
+          <tr><td><div style="font-weight:700;color:var(--blue);">Lloyd Walmsley</div></td><td style="color:var(--muted);">UBS</td><td><span class="badge b-blue">Tech</span></td><td style="color:var(--muted);font-size:11px;">High-performing tech recommendations</td></tr>
+          <tr><td><div style="font-weight:700;color:var(--blue);">Jurrien Timmer</div></td><td style="color:var(--muted);">Fidelity</td><td><span class="badge b-neut">Macro/FA</span></td><td style="color:var(--muted);font-size:11px;">Deep macro + fundamental framework</td></tr>
+          <tr><td><div style="font-weight:700;color:var(--blue);">Ryan Detrick</div></td><td style="color:var(--muted);">Carson Group</td><td><span class="badge b-blue">Quant</span></td><td style="color:var(--muted);font-size:11px;">Seasonality, breadth, historical probability</td></tr>
+          <tr><td><div style="font-weight:700;color:var(--blue);">Dan Ives</div></td><td style="color:var(--muted);">Wedbush</td><td><span class="badge b-blue">Tech</span></td><td style="color:var(--muted);font-size:11px;">TSLA, AI infrastructure mega-bull</td></tr>
+          <tr><td><div style="font-weight:700;color:var(--blue);">Mark Lipacis</div></td><td style="color:var(--muted);">Evercore ISI</td><td><span class="badge b-blue">Semis</span></td><td style="color:var(--muted);font-size:11px;">Chip cycle expertise, NVDA coverage</td></tr>
+          <tr><td><div style="font-weight:700;color:var(--blue);">Steve Reitmeister</div></td><td style="color:var(--muted);">WallStreetZen</td><td><span class="badge b-bull">Value+Mom</span></td><td style="color:var(--muted);font-size:11px;">Top-ranked Zen Investor picks</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<!-- DISCLAIMER -->
+<div class="disclaimer">
+  <strong>IMPORTANT DISCLAIMER:</strong> All analysis, trade ideas, price targets, and recommendations are for <strong>educational and informational purposes only</strong>. They do <strong>not</strong> constitute personalized investment advice, a solicitation, or an offer to buy or sell any security. Options trading involves <strong>substantial risk of loss</strong>. Past performance does not guarantee future results. Leveraged positions can result in losses exceeding your initial investment. Always consult a <strong>licensed, registered financial advisor</strong> before investing. Never invest money you cannot afford to lose. NandaEdge Advisor has no fiduciary responsibility to any user.
+</div>
+
+</div><!-- /main -->
+
+<script>
+// ══════════════════════════════════════════════════════
+// STATIC META (analytical — update manually each morning)
+// ══════════════════════════════════════════════════════
+const META = {
+  NVDA:{ name:'NVIDIA Corp',           sent:'bull', signal:'BUY DIP', stars:5, risk:'MEDIUM',
+         entry:'855–875', t1:'920', t2:'960', stop:'838',
+         tip:'Strong Buy', tipPT:'$1,050', saQuant:'Strong Buy', saGrades:{V:'C',G:'A',P:'A',M:'A',R:'A'},
+         smartScore:9, shortInt:'1.1%', iv:52,
+         opt:'Bull Call Spread', strike:'$900/$920 Call', exp:'May 16', dte:25,
+         delta:.52, theta:-0.18, vega:.38,
+         thesis:'Blackwell GPU demand inflecting; hyperscaler capex acceleration a direct tailwind. RSI pulling back from overbought — ideal re-entry zone.' },
+  TSLA:{ name:'Tesla Inc',             sent:'bull', signal:'WATCH',   stars:3, risk:'HIGH',
+         entry:'235–248', t1:'275', t2:'310', stop:'224',
+         tip:'Buy', tipPT:'$310', saQuant:'Hold', saGrades:{V:'D',G:'B',P:'B',M:'C',R:'B'},
+         smartScore:7, shortInt:'3.2%', iv:72,
+         opt:'Long Call',        strike:'$260 Call',       exp:'May 16', dte:25,
+         delta:.44, theta:-0.22, vega:.61,
+         thesis:'Robotaxi catalyst approaching; FSD v13 rollout driving re-rating. High IV — size down and wait for clear momentum trigger above $250.' },
+  PLTR:{ name:'Palantir Technologies', sent:'neut', signal:'HOLD',    stars:3, risk:'MEDIUM',
+         entry:'92–98',  t1:'108', t2:'120', stop:'87',
+         tip:'Hold', tipPT:'$105', saQuant:'Hold', saGrades:{V:'D',G:'A',P:'B',M:'B',R:'C'},
+         smartScore:6, shortInt:'2.4%', iv:68,
+         opt:'Iron Condor',      strike:'$90/$100/$110/$120', exp:'Apr 25', dte:4,
+         delta:.02, theta:+0.31, vega:-.42,
+         thesis:'Consolidating after parabolic run; government AI contract pipeline solid but valuation stretched. Sell IV with Iron Condor while range-bound.' },
+  AMD: { name:'Advanced Micro Devices', sent:'bull', signal:'ENTER',   stars:4, risk:'MEDIUM',
+         entry:'158–166', t1:'178', t2:'192', stop:'151',
+         tip:'Strong Buy', tipPT:'$200', saQuant:'Buy', saGrades:{V:'C',G:'A',P:'B',M:'A',R:'A'},
+         smartScore:8, shortInt:'2.1%', iv:48,
+         opt:'Bull Call Spread', strike:'$170/$185 Call',   exp:'May 16', dte:25,
+         delta:.48, theta:-0.14, vega:.29,
+         thesis:'MI300X AI accelerator backlog expanding; earnings Apr 30 could be a catalyst. Low IV makes call spread attractive ahead of print.' },
+  MU:  { name:'Micron Technology',     sent:'neut', signal:'WATCH',   stars:3, risk:'MEDIUM',
+         entry:'108–115', t1:'125', t2:'138', stop:'103',
+         tip:'Buy', tipPT:'$135', saQuant:'Buy', saGrades:{V:'B',G:'A',P:'B',M:'B',R:'B'},
+         smartScore:7, shortInt:'1.8%', iv:44,
+         opt:'Covered Call',     strike:'$120 Call',        exp:'May 16', dte:25,
+         delta:.35, theta:-0.09, vega:.22,
+         thesis:'HBM3e memory supercycle driven by AI GPU demand; NVDA sole-source supplier. Waiting for price confirmation above $115 before adding.' },
+  CRWD:{ name:'CrowdStrike Holdings',  sent:'bull', signal:'HOLD',    stars:4, risk:'LOW',
+         entry:'390–405', t1:'435', t2:'460', stop:'378',
+         tip:'Strong Buy', tipPT:'$460', saQuant:'Strong Buy', saGrades:{V:'D',G:'A',P:'A',M:'A',R:'A'},
+         smartScore:9, shortInt:'1.3%', iv:39,
+         opt:'Long Call',        strike:'$420 Call',        exp:'May 16', dte:25,
+         delta:.42, theta:-0.11, vega:.31,
+         thesis:'Platform consolidation winner; ARR growth accelerating post-outage recovery. Low IV — long call is cheap. Hold core position.' },
+  INTC:{ name:'Intel Corporation',     sent:'bear', signal:'AVOID',   stars:1, risk:'HIGH',
+         entry:'19–21',  t1:'23',  t2:'26',  stop:'17.5',
+         tip:'Hold', tipPT:'$24', saQuant:'Sell', saGrades:{V:'C',G:'D',P:'D',M:'D',R:'D'},
+         smartScore:3, shortInt:'5.6%', iv:62,
+         opt:'Bear Put Spread',  strike:'$20/$18 Put',      exp:'May 2', dte:11,
+         delta:-.48, theta:-0.08, vega:.18,
+         thesis:'Foundry delays and competitive pressure from TSMC/AMD persisting. Earnings Apr 25 — downside risk elevated. Avoid longs; put spread for hedge.' },
+  IONQ:{ name:'IonQ Inc',              sent:'bull', signal:'ENTER',   stars:4, risk:'SPECULATIVE',
+         entry:'35–38',  t1:'44',  t2:'52',  stop:'31',
+         tip:'Buy', tipPT:'$50', saQuant:'Hold', saGrades:{V:'F',G:'B',P:'D',M:'A',R:'B'},
+         smartScore:7, shortInt:'8.4%', iv:92,
+         opt:'Long Call',        strike:'$40 Call',         exp:'May 16', dte:25,
+         delta:.45, theta:-0.28, vega:.74,
+         thesis:'Government quantum contract pipeline building; algorithmic qubit advantage claim gaining credibility. High IV — size very small, lottery-ticket sizing only. ⚠️ Speculative.' },
+  RGTI:{ name:'Rigetti Computing',     sent:'bear', signal:'AVOID',   stars:1, risk:'SPECULATIVE',
+         entry:'10–12',  t1:'14',  t2:'17',  stop:'8.5',
+         tip:'Hold', tipPT:'$12', saQuant:'Sell', saGrades:{V:'F',G:'C',P:'F',M:'C',R:'D'},
+         smartScore:3, shortInt:'14.2%', iv:98,
+         opt:'Long Put',         strike:'$10 Put',          exp:'Apr 25', dte:4,
+         delta:-.52, theta:-0.19, vega:.41,
+         thesis:'Missed Q1 revenue; secondary offering dilution risk. Highest short interest on watchlist. Avoid longs — put for speculative downside hedge only. ⚠️ Extreme risk.' },
+};
+
+const SYMS   = ['NVDA','TSLA','PLTR','AMD','MU','CRWD','INTC','IONQ','RGTI'];
+const MKT    = ['^GSPC','^IXIC','^DJI','^RUT','^VIX','^TNX','DX-Y.NYB','CL=F','GC=F','BTC-USD','ETH-USD'];
+const ALL    = [...SYMS,...MKT];
+
+const sentMap = { bull:{label:'Bullish',cls:'b-bull'}, bear:{label:'Bearish',cls:'b-bear'}, neut:{label:'Neutral',cls:'b-neut'} };
+const sigMap  = { 'BUY DIP':'s-buy','ENTER':'s-buy','HOLD':'s-hold','WATCH':'s-watch','AVOID':'s-sell' };
+const riskMap = { LOW:'rt-low', MEDIUM:'rt-med', HIGH:'rt-hi', SPECULATIVE:'rt-spec' };
+
+// ── FETCH from local server (http://localhost:8765) ───
+async function fetchQuotes() {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
+    const res = await fetch('http://localhost:8765/quotes', { signal: controller.signal });
+    clearTimeout(timer);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const results = data?.quoteResponse?.result;
+    if (!results?.length) throw new Error('Empty response');
+    return results;
+  } catch(e) {
+    document.getElementById('watchlist-body').innerHTML = `
+      <tr><td colspan="11" style="padding:24px;text-align:center;">
+        <div style="color:var(--yellow);font-weight:700;font-size:13px;margin-bottom:10px;">
+          ⚠️ Server not running
+        </div>
+        <div style="color:var(--muted);font-size:12px;line-height:2;">
+          Start the data server in your terminal:<br>
+          <code style="background:#0d1117;padding:6px 18px;border-radius:4px;color:var(--green);display:inline-block;">
+            python3 /Users/rajamac/claude-projects/finance-dashboard/server.py
+          </code><br>
+          Then open &nbsp;<strong style="color:var(--blue);">http://localhost:8765</strong>&nbsp; in your browser.
+        </div>
+      </td></tr>`;
+    document.getElementById('key-banner').style.display = 'none';
+    return null;
+  }
+}
+
+// ── HELPERS ───────────────────────────────────────────
+const fmtVol = v => !v?'—':v>=1e9?(v/1e9).toFixed(1)+'B':v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?(v/1e3).toFixed(0)+'K':v;
+const pct = v => v==null?'—':(v>=0?'+':'')+v.toFixed(2)+'%';
+const cls = v => v==null?'':v>=0?'up':'dn';
+const stars = n => '★'.repeat(n)+'☆'.repeat(5-n);
+const gradeEl = g => `<span class="grade g${(g||'?').toLowerCase()}">${g||'?'}</span>`;
+const smartCls = s => s>=8?'sc-hi':s>=5?'sc-mid':'sc-lo';
+
+// ── MARKET BAR ────────────────────────────────────────
+function renderMarket(map){
+  const items = [
+    ['^GSPC','spx',true],['^IXIC','ixic',true],['^DJI','dji',true],
+    ['^RUT','rut',true],['^VIX','vix',false],['^TNX','tnx',false],
+    ['DX-Y.NYB','dxy',false],['CL=F','oil',false],['GC=F','gold',false],
+    ['BTC-USD','btc',false],['ETH-USD','eth',false],
+  ];
+  items.forEach(([sym,id,usePct])=>{
+    const q = map[sym]; if(!q) return;
+    const el = document.getElementById(id); if(!el) return;
+    if(usePct){
+      const v = q.regularMarketChangePercent;
+      el.textContent = pct(v);
+      el.className = 'val '+cls(v);
+    } else if(id==='vix'){
+      const v = q.regularMarketPrice;
+      el.textContent = v.toFixed(1);
+      const regime = v<15?'up':v<20?'up':v<28?'nt':'dn';
+      el.className = 'val '+regime;
+      updateVixRegime(v);
+    } else if(id==='tnx'){
+      el.textContent = q.regularMarketPrice.toFixed(2)+'%';
+      el.className = 'val '+(q.regularMarketChange>=0?'dn':'up');
+    } else if(id==='dxy'){
+      el.textContent = q.regularMarketPrice.toFixed(2);
+      el.className = 'val '+cls(q.regularMarketChangePercent);
+    } else {
+      const v = q.regularMarketPrice;
+      el.textContent = v>=1000?'$'+Math.round(v).toLocaleString():'$'+v.toFixed(2);
+      el.className = 'val '+cls(q.regularMarketChangePercent);
+    }
+  });
+}
+
+function updateVixRegime(v){
+  const el = document.getElementById('vix-regime');
+  const sub = document.getElementById('vix-sub');
+  if(v<15){el.textContent='Complacency';el.className='macro-val up';sub.textContent='Sell options — IV too cheap';}
+  else if(v<20){el.textContent='Normal';el.className='macro-val up';sub.textContent='All strategies valid';}
+  else if(v<28){el.textContent='Elevated';el.className='macro-val nt';sub.textContent='Reduce position size 25%';}
+  else if(v<35){el.textContent='High Fear';el.className='macro-val dn';sub.textContent='Buy quality dips only';}
+  else{el.textContent='PANIC';el.className='macro-val dn';sub.textContent='Hedges only — no new longs';}
+}
+
+// ── WATCHLIST ─────────────────────────────────────────
+function renderWatchlist(map){
+  const body = document.getElementById('watchlist-body');
+  body.innerHTML = '';
+  SYMS.forEach(sym=>{
+    const q = map[sym];
+    const m = META[sym];
+    const price  = q?.regularMarketPrice;
+    const chgPct = q?.regularMarketChangePercent;
+    const vol    = q?.regularMarketVolume;
+    const hi52   = q?.fiftyTwoWeekHigh;
+    const lo52   = q?.fiftyTwoWeekLow;
+    const rangeStr = hi52&&lo52 ? `$${lo52.toFixed(0)}–$${hi52.toFixed(0)}` : '—';
+    const s = sentMap[m.sent];
+    const sigCls = sigMap[m.signal]||'s-watch';
+    const scCls  = smartCls(m.smartScore);
+    body.innerHTML += `
+      <tr>
+        <td><div class="sym">${sym}</div><div class="co">${m.name}</div></td>
+        <td style="font-weight:800;">${price!=null?'$'+price.toFixed(2):'—'}</td>
+        <td class="${cls(chgPct)}" style="font-weight:700;">${pct(chgPct)}</td>
+        <td style="color:var(--muted);">${fmtVol(vol)}</td>
+        <td style="font-size:11px;color:var(--muted);">${rangeStr}</td>
+        <td><span class="badge ${m.tip.includes('Strong')?'b-bull':m.tip==='Sell'?'b-bear':'b-neut'}" style="font-size:9px;">${m.tip}</span><div style="font-size:10px;color:var(--muted);margin-top:2px;">${m.tipPT}</div></td>
+        <td><span class="badge ${m.saQuant.includes('Strong Buy')?'b-bull':m.saQuant.includes('Sell')?'b-bear':'b-neut'}" style="font-size:9px;">${m.saQuant}</span></td>
+        <td><span class="score ${scCls}">${m.smartScore}/10</span></td>
+        <td><span class="badge ${s.cls}">${s.label}</span></td>
+        <td><span class="sig ${sigCls}">${m.signal}</span></td>
+        <td><span class="stars">${stars(m.stars)}</span></td>
+      </tr>`;
+  });
+}
+
+// ── TRADE CARDS ───────────────────────────────────────
+function renderTradeCards(map){
+  const grid = document.getElementById('trade-grid');
+  grid.innerHTML = '';
+  SYMS.forEach(sym=>{
+    const q = map[sym];
+    const m = META[sym];
+    const price  = q?.regularMarketPrice;
+    const chgPct = q?.regularMarketChangePercent;
+    const priceStr = price!=null?'$'+price.toFixed(2):'—';
+    const chgStr   = pct(chgPct);
+    const chgCls   = cls(chgPct);
+    const g = m.saGrades;
+    const rCls = riskMap[m.risk]||'rt-med';
+    grid.innerHTML += `
+      <div class="tc">
+        <div class="tc-hdr">
+          <div>
+            <div class="tc-sym ${chgCls}">${sym}</div>
+            <div style="font-size:10px;color:var(--muted);">${m.name}</div>
+            <div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap;">
+              <span class="badge ${m.sent==='bull'?'b-bull':m.sent==='bear'?'b-bear':'b-neut'}" style="font-size:9px;">${m.tip}</span>
+              <span class="badge b-blue" style="font-size:9px;">PT ${m.tipPT}</span>
+              <span class="badge ${m.saQuant.includes('Strong Buy')?'b-bull':m.saQuant.includes('Sell')?'b-bear':'b-neut'}" style="font-size:9px;">${m.saQuant}</span>
+            </div>
+          </div>
+          <div style="text-align:right;">
+            <div class="tc-price">${priceStr}</div>
+            <div class="${chgCls}" style="font-size:11px;font-weight:700;">${chgStr}</div>
+            <div style="font-size:10px;color:var(--muted);margin-top:3px;">Short: ${m.shortInt}</div>
+          </div>
+        </div>
+        <div class="tc-body">
+
+          <!-- SA Grades -->
+          <div class="tc-sec">
+            <div class="tc-sec-title">SA Factor Grades<span style="color:var(--muted);font-weight:400;">Seeking Alpha Quant</span></div>
+            <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px;text-align:center;">
+              <div style="font-size:9px;color:var(--muted);">Value</div>
+              <div style="font-size:9px;color:var(--muted);">Growth</div>
+              <div style="font-size:9px;color:var(--muted);">Profit</div>
+              <div style="font-size:9px;color:var(--muted);">Momentum</div>
+              <div style="font-size:9px;color:var(--muted);">Revision</div>
+              ${['V','G','P','M','R'].map(k=>gradeEl(g[k])).join('')}
+            </div>
+          </div>
+
+          <!-- Swing Trade -->
+          <div class="tc-sec">
+            <div class="tc-sec-title">Swing Trade <span style="color:var(--muted);font-weight:400;">2–10 days</span></div>
+            <div class="tc-row"><span class="tl">Entry Zone</span><span class="tv tv-bl">$${m.entry}</span></div>
+            <div class="tc-row"><span class="tl">Target 1</span><span class="tv tv-up">$${m.t1}</span></div>
+            <div class="tc-row"><span class="tl">Target 2</span><span class="tv tv-up">$${m.t2}</span></div>
+            <div class="tc-row"><span class="tl">Stop Loss</span><span class="tv tv-dn">$${m.stop}</span></div>
+          </div>
+
+          <!-- Options -->
+          <div class="tc-sec">
+            <div class="tc-sec-title">Options Play<span class="opt-tag">IV ${m.iv}%</span></div>
+            <div class="tc-row"><span class="tl">Strategy</span><span class="tv tv-pu">${m.opt}</span></div>
+            <div class="tc-row"><span class="tl">Strike / Legs</span><span class="tv">${m.strike}</span></div>
+            <div class="tc-row"><span class="tl">Expiry</span><span class="tv">${m.exp} (${m.dte} DTE)</span></div>
+            <div class="tc-row"><span class="tl">Greeks</span><span class="tv" style="font-size:10px;">Δ ${m.delta>0?'+':''}${m.delta} &nbsp;Θ ${m.theta} &nbsp;V ${m.vega}</span></div>
+            <div class="tc-row"><span class="tl">Exit Rule</span><span class="tv" style="font-size:10px;">50% profit or 2× loss</span></div>
+          </div>
+
+          <!-- Thesis -->
+          <div style="font-size:11px;color:var(--muted);line-height:1.5;padding:6px 0 2px;">${m.thesis}</div>
+
+        </div>
+        <div class="conviction">
+          <span class="stars" style="font-size:13px;">${stars(m.stars)}</span>
+          <span class="risk-tag ${rCls}">${m.risk}</span>
+          <span style="font-size:10px;color:var(--muted);margin-left:auto;">Smart Score: <span class="score ${smartCls(m.smartScore)}" style="font-size:10px;">${m.smartScore}/10</span></span>
+        </div>
+      </div>`;
+  });
+}
+
+// ── OPTIONS FLOW ──────────────────────────────────────
+function renderOptionsFlow(){
+  const flows = [
+    { type:'CALL', sym:'NVDA', detail:'$900 Call May 16 — SWEEP 5,100 contracts', premium:'$2.31M', bull:true },
+    { type:'CALL', sym:'AMD',  detail:'$175 Call May 2 — Block 3,800 contracts',  premium:'$940K',  bull:true },
+    { type:'CALL', sym:'IONQ', detail:'$40 Call May 16 — Block 9,200 contracts',  premium:'$870K',  bull:true },
+    { type:'PUT',  sym:'INTC', detail:'$20 Put May 2 — Sweep 4,400 contracts',    premium:'$680K',  bull:false },
+    { type:'PUT',  sym:'RGTI', detail:'$10 Put Apr 25 — Sweep 6,100 contracts',   premium:'$290K',  bull:false },
+  ];
+  const el = document.getElementById('options-flow');
+  el.innerHTML = '';
+  flows.forEach(f=>{
+    el.innerHTML += `
+      <div class="flow-item">
+        <div class="flow-type ${f.bull?'call-f':'put-f'}">${f.type}</div>
+        <div class="flow-detail"><span class="flow-sym">${f.sym}</span> &nbsp;${f.detail}</div>
+        <div class="flow-prem">${f.premium}</div>
+      </div>`;
+  });
+}
+
+// ── ANALYST FEED ──────────────────────────────────────
+function renderAnalystFeed(){
+  const analysts = [
+    { initials:'ML', name:'Mark Lipacis', firm:'Evercore ISI', action:'upgrade', sym:'NVDA', text:'Upgrades NVDA to Strong Buy, raises PT to $1,100 — Blackwell datacenter shipments tracking above consensus.', cls:'upgrade' },
+    { initials:'DI', name:'Dan Ives',     firm:'Wedbush',       action:'maintain',sym:'TSLA', text:'Maintains Outperform, PT $315 — Robotaxi launch timeline firming; $1T valuation scenario in play.', cls:'upgrade' },
+    { initials:'TS', name:'T.Sacconaghi', firm:'Bernstein',     action:'downgrade',sym:'INTC', text:'Downgrades INTC to Underperform, cuts PT to $19 — Foundry ramp slower than expected, margin pressure persists.', cls:'downgrade' },
+    { initials:'LW', name:'L.Walmsley',  firm:'UBS',            action:'initiate', sym:'CRWD', text:'Initiates CRWD at Buy, PT $450 — Platform consolidation story intact; ARR growth re-accelerating.', cls:'initiate' },
+    { initials:'SR', name:'S.Reitmeister',firm:'WallStreetZen', action:'maintain',sym:'AMD',  text:'Maintains Buy — MI300X AI chip demand exceeding supply; earnings Apr 30 could be a breakout moment.', cls:'upgrade' },
+  ];
+  const el = document.getElementById('analyst-feed');
+  el.innerHTML = '';
+  analysts.forEach(a=>{
+    el.innerHTML += `
+      <div class="analyst-item">
+        <div class="analyst-icon">${a.initials}</div>
+        <div class="analyst-body">
+          <div class="analyst-meta"><strong style="color:var(--text);">${a.name}</strong> &middot; ${a.firm} &middot; <span class="${a.cls}" style="font-weight:700;font-size:10px;text-transform:uppercase;">${a.action}</span> &middot; <span class="badge b-blue" style="font-size:9px;">${a.sym}</span></div>
+          <div class="analyst-text">${a.text}</div>
+        </div>
+      </div>`;
+  });
+}
+
+// ── NEWS FEED ─────────────────────────────────────────
+function renderNews(){
+  const news = [
+    { sent:'bull', tag:'NVDA', src:'Bloomberg',   time:'9:42 AM', polarity:'+5', text:'NVIDIA Blackwell Ultra GPU architecture unveiled; Goldman raises PT to $1,150 citing AI infrastructure supercycle acceleration.' },
+    { sent:'bull', tag:'AMD',  src:'Reuters',     time:'9:18 AM', polarity:'+4', text:'AMD MI300X AI accelerator backlog now extends into Q4 2026; supply constraints signal demand far exceeds estimates.' },
+    { sent:'bull', tag:'IONQ', src:'Benzinga',    time:'9:05 AM', polarity:'+4', text:'IonQ awarded $75M DoD quantum computing research contract; largest government deal in company history.' },
+    { sent:'bear', tag:'INTC', src:'CNBC',        time:'8:52 AM', polarity:'-4', text:'Intel Panther Lake yield issues push mass production to late 2026; TSMC partnership may delay foundry margin recovery.' },
+    { sent:'bull', tag:'CRWD', src:'Seeking Alpha',time:'8:35 AM',polarity:'+3', text:'CrowdStrike ARR growth re-accelerating post-outage: $4.2B run rate; net retention rate back to 120%+.' },
+    { sent:'bear', tag:'RGTI', src:'MarketWatch', time:'8:12 AM', polarity:'-3', text:'Rigetti Computing files secondary offering at 12% discount; 14% short float signals institutional skepticism.' },
+  ];
+  const el = document.getElementById('news-feed');
+  el.innerHTML = '';
+  news.forEach(n=>{
+    const cls2 = n.sent==='bull'?'ni-bull':n.sent==='bear'?'ni-bear':'ni-neut';
+    const tCls = n.sent==='bull'?'nt-bull':n.sent==='bear'?'nt-bear':'nt-neut';
+    const polCls= n.polarity.startsWith('+')?'pol-p':'pol-n';
+    el.innerHTML += `
+      <div class="news-item ${cls2}">
+        <div class="news-meta">
+          <span class="ntag ${tCls}">${n.tag}</span>
+          ${n.src} &middot; ${n.time} ET
+          <span class="polarity ${polCls}">Polarity ${n.polarity}</span>
+        </div>
+        <div class="news-text">${n.text}</div>
+      </div>`;
+  });
+}
+
+// ── MARKET STATUS ─────────────────────────────────────
+function updateMarketStatus(){
+  const now = new Date();
+  const et  = new Date(now.toLocaleString('en-US',{timeZone:'America/New_York'}));
+  const h = et.getHours(), m = et.getMinutes(), d = et.getDay();
+  const mins = h*60+m;
+  const dot = document.getElementById('mkt-dot');
+  const lbl = document.getElementById('mkt-label');
+  if(d===0||d===6){ dot.className='dot dot-red'; lbl.textContent='MARKET CLOSED'; lbl.style.color='var(--red)'; }
+  else if(mins>=930&&mins<1080){ dot.className='dot dot-green'; lbl.textContent='PRE-MARKET'; lbl.style.color='var(--yellow)'; }
+  else if(mins>=1080&&mins<960+480){ // wrong logic fix:
+    if(mins>=570&&mins<960){ dot.className='dot dot-green'; lbl.textContent='MARKET OPEN'; lbl.style.color='var(--green)'; }
+    else{ dot.className='dot dot-red'; lbl.textContent='AFTER-HOURS'; lbl.style.color='var(--muted)'; }
+  } else { dot.className='dot dot-red'; lbl.textContent='AFTER-HOURS'; lbl.style.color='var(--muted)'; }
+}
+
+function updateClock(){
+  const now = new Date();
+  document.getElementById('clock').textContent = now.toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true})+' ET';
+}
+
+// ── MAIN REFRESH ──────────────────────────────────────
+async function refresh(){
+  const quotes = await fetchQuotes();
+  if(!quotes){ return; }
+  const map = {};
+  quotes.forEach(q=>map[q.symbol]=q);
+  renderMarket(map);
+  renderWatchlist(map);
+  renderTradeCards(map);
+  document.getElementById('update-time').textContent = new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:true});
+}
+
+// ── INIT ──────────────────────────────────────────────
+renderOptionsFlow();
+renderAnalystFeed();
+renderNews();
+updateClock();
+updateMarketStatus();
+setInterval(updateClock, 1000);
+setInterval(updateMarketStatus, 30000);
+
+refresh();
+setInterval(refresh, 60000);
+</script>
+</body>
+</html>
