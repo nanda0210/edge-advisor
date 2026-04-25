@@ -227,16 +227,16 @@ tr:hover td{background:#1c2128;transition:.12s;}
 <!-- ASIA / EUROPE BAR -->
 <div class="index-bar asia-bar">
   <div class="bar-label">ASIA</div>
-  <div class="idx"><div class="lbl">Nikkei</div><div class="val nt">—</div></div>
-  <div class="idx"><div class="lbl">Hang Seng</div><div class="val nt">—</div></div>
-  <div class="idx"><div class="lbl">Shanghai</div><div class="val nt">—</div></div>
+  <div class="idx"><div class="lbl">Nikkei</div><div class="val" id="n225">—</div></div>
+  <div class="idx"><div class="lbl">Hang Seng</div><div class="val" id="hsi">—</div></div>
+  <div class="idx"><div class="lbl">Shanghai</div><div class="val" id="sse">—</div></div>
   <div class="bar-label" style="margin-left:8px;">EUROPE</div>
-  <div class="idx"><div class="lbl">DAX</div><div class="val nt">—</div></div>
-  <div class="idx"><div class="lbl">FTSE 100</div><div class="val nt">—</div></div>
-  <div class="idx"><div class="lbl">CAC 40</div><div class="val nt">—</div></div>
+  <div class="idx"><div class="lbl">DAX</div><div class="val" id="dax">—</div></div>
+  <div class="idx"><div class="lbl">FTSE 100</div><div class="val" id="ftse">—</div></div>
+  <div class="idx"><div class="lbl">CAC 40</div><div class="val" id="cac">—</div></div>
   <div class="bar-label" style="margin-left:8px;">CRYPTO</div>
   <div class="idx"><div class="lbl">ETH</div><div class="val" id="eth">—</div></div>
-  <div class="idx"><div class="lbl">SOL</div><div class="val nt">—</div></div>
+  <div class="idx"><div class="lbl">SOL</div><div class="val" id="sol">—</div></div>
 </div>
 
 <div class="main">
@@ -317,18 +317,19 @@ tr:hover td{background:#1c2128;transition:.12s;}
           <th>Ticker</th>
           <th>Price</th>
           <th>Chg%</th>
-          <th>Volume</th>
-          <th>52W Range</th>
+          <th>Day Range</th>
+          <th>Vol (vs Avg)</th>
+          <th>RSI</th>
+          <th>Trend</th>
           <th>TipRanks</th>
           <th>SA Quant</th>
-          <th>Smart Score</th>
-          <th>Sentiment</th>
+          <th>Smart</th>
           <th>Signal</th>
-          <th>Conviction</th>
+          <th>★</th>
         </tr>
       </thead>
       <tbody id="watchlist-body">
-        <tr class="loading-row"><td colspan="11"><span class="spinner"></span>Fetching live prices from Yahoo Finance...</td></tr>
+        <tr class="loading-row"><td colspan="12"><span class="spinner"></span>Fetching live prices from Yahoo Finance...</td></tr>
       </tbody>
     </table>
     <div class="sources-bar">
@@ -444,112 +445,102 @@ tr:hover td{background:#1c2128;transition:.12s;}
 
 <script>
 // ══════════════════════════════════════════════════════
-// STATIC META (analytical — update manually each morning)
+// STATIC META — qualitative only; all price levels live-derived
+// (sentiment, thesis, option strategy preference, analyst view)
 // ══════════════════════════════════════════════════════
 const META = {
   NVDA:{ name:'NVIDIA Corp',           sent:'bull', signal:'BUY DIP', stars:5, risk:'MEDIUM',
-         entry:'855–875', t1:'920', t2:'960', stop:'838',
-         tip:'Strong Buy', tipPT:'$1,050', saQuant:'Strong Buy', saGrades:{V:'C',G:'A',P:'A',M:'A',R:'A'},
-         smartScore:9, shortInt:'1.1%', iv:52,
-         opt:'Bull Call Spread', strike:'$900/$920 Call', exp:'May 16', dte:25,
-         delta:.52, theta:-0.18, vega:.38,
-         thesis:'Blackwell GPU demand inflecting; hyperscaler capex acceleration a direct tailwind. RSI pulling back from overbought — ideal re-entry zone.' },
+         tip:'Strong Buy', tipPT:'+10%', saQuant:'Strong Buy', saGrades:{V:'C',G:'A',P:'A',M:'A',R:'A'},
+         smartScore:9, shortInt:'1.1%', ivRank:52, opt:'Bull Call Spread',
+         thesis:'Blackwell GPU demand inflecting; hyperscaler capex acceleration a direct tailwind. Entry on pullbacks toward the 20d EMA.' },
   TSLA:{ name:'Tesla Inc',             sent:'bull', signal:'WATCH',   stars:3, risk:'HIGH',
-         entry:'235–248', t1:'275', t2:'310', stop:'224',
-         tip:'Buy', tipPT:'$310', saQuant:'Hold', saGrades:{V:'D',G:'B',P:'B',M:'C',R:'B'},
-         smartScore:7, shortInt:'3.2%', iv:72,
-         opt:'Long Call',        strike:'$260 Call',       exp:'May 16', dte:25,
-         delta:.44, theta:-0.22, vega:.61,
-         thesis:'Robotaxi catalyst approaching; FSD v13 rollout driving re-rating. High IV — size down and wait for clear momentum trigger above $250.' },
+         tip:'Buy', tipPT:'+6%', saQuant:'Hold', saGrades:{V:'D',G:'B',P:'B',M:'C',R:'B'},
+         smartScore:7, shortInt:'3.2%', ivRank:72, opt:'Long Call',
+         thesis:'Robotaxi / FSD v13 rollout driving re-rating. Elevated IV — size down and wait for clear momentum trigger.' },
   PLTR:{ name:'Palantir Technologies', sent:'neut', signal:'HOLD',    stars:3, risk:'MEDIUM',
-         entry:'92–98',  t1:'108', t2:'120', stop:'87',
-         tip:'Hold', tipPT:'$105', saQuant:'Hold', saGrades:{V:'D',G:'A',P:'B',M:'B',R:'C'},
-         smartScore:6, shortInt:'2.4%', iv:68,
-         opt:'Iron Condor',      strike:'$90/$100/$110/$120', exp:'Apr 25', dte:4,
-         delta:.02, theta:+0.31, vega:-.42,
-         thesis:'Consolidating after parabolic run; government AI contract pipeline solid but valuation stretched. Sell IV with Iron Condor while range-bound.' },
+         tip:'Hold', tipPT:'+3%', saQuant:'Hold', saGrades:{V:'D',G:'A',P:'B',M:'B',R:'C'},
+         smartScore:6, shortInt:'2.4%', ivRank:68, opt:'Iron Condor',
+         thesis:'Consolidating after parabolic run; gov AI contract pipeline solid but valuation stretched. Sell IV while range-bound.' },
   AMD: { name:'Advanced Micro Devices', sent:'bull', signal:'ENTER',   stars:4, risk:'MEDIUM',
-         entry:'158–166', t1:'178', t2:'192', stop:'151',
-         tip:'Strong Buy', tipPT:'$200', saQuant:'Buy', saGrades:{V:'C',G:'A',P:'B',M:'A',R:'A'},
-         smartScore:8, shortInt:'2.1%', iv:48,
-         opt:'Bull Call Spread', strike:'$170/$185 Call',   exp:'May 16', dte:25,
-         delta:.48, theta:-0.14, vega:.29,
-         thesis:'MI300X AI accelerator backlog expanding; earnings Apr 30 could be a catalyst. Low IV makes call spread attractive ahead of print.' },
-  MU:  { name:'Micron Technology',     sent:'neut', signal:'WATCH',   stars:3, risk:'MEDIUM',
-         entry:'108–115', t1:'125', t2:'138', stop:'103',
-         tip:'Buy', tipPT:'$135', saQuant:'Buy', saGrades:{V:'B',G:'A',P:'B',M:'B',R:'B'},
-         smartScore:7, shortInt:'1.8%', iv:44,
-         opt:'Covered Call',     strike:'$120 Call',        exp:'May 16', dte:25,
-         delta:.35, theta:-0.09, vega:.22,
-         thesis:'HBM3e memory supercycle driven by AI GPU demand; NVDA sole-source supplier. Waiting for price confirmation above $115 before adding.' },
+         tip:'Strong Buy', tipPT:'+8%', saQuant:'Buy', saGrades:{V:'C',G:'A',P:'B',M:'A',R:'A'},
+         smartScore:8, shortInt:'2.1%', ivRank:48, opt:'Bull Call Spread',
+         thesis:'MI300X AI accelerator backlog expanding; next earnings a key catalyst. Favorable IV for debit spreads.' },
+  MU:  { name:'Micron Technology',     sent:'bull', signal:'ENTER',   stars:4, risk:'MEDIUM',
+         tip:'Buy', tipPT:'+7%', saQuant:'Buy', saGrades:{V:'B',G:'A',P:'B',M:'B',R:'B'},
+         smartScore:7, shortInt:'1.8%', ivRank:44, opt:'Bull Call Spread',
+         thesis:'HBM3e memory supercycle driven by AI GPU demand; NVDA sole-source supplier. Buy dips to 20d EMA.' },
   CRWD:{ name:'CrowdStrike Holdings',  sent:'bull', signal:'HOLD',    stars:4, risk:'LOW',
-         entry:'390–405', t1:'435', t2:'460', stop:'378',
-         tip:'Strong Buy', tipPT:'$460', saQuant:'Strong Buy', saGrades:{V:'D',G:'A',P:'A',M:'A',R:'A'},
-         smartScore:9, shortInt:'1.3%', iv:39,
-         opt:'Long Call',        strike:'$420 Call',        exp:'May 16', dte:25,
-         delta:.42, theta:-0.11, vega:.31,
-         thesis:'Platform consolidation winner; ARR growth accelerating post-outage recovery. Low IV — long call is cheap. Hold core position.' },
-  INTC:{ name:'Intel Corporation',     sent:'bear', signal:'AVOID',   stars:1, risk:'HIGH',
-         entry:'19–21',  t1:'23',  t2:'26',  stop:'17.5',
-         tip:'Hold', tipPT:'$24', saQuant:'Sell', saGrades:{V:'C',G:'D',P:'D',M:'D',R:'D'},
-         smartScore:3, shortInt:'5.6%', iv:62,
-         opt:'Bear Put Spread',  strike:'$20/$18 Put',      exp:'May 2', dte:11,
-         delta:-.48, theta:-0.08, vega:.18,
-         thesis:'Foundry delays and competitive pressure from TSMC/AMD persisting. Earnings Apr 25 — downside risk elevated. Avoid longs; put spread for hedge.' },
+         tip:'Strong Buy', tipPT:'+5%', saQuant:'Strong Buy', saGrades:{V:'D',G:'A',P:'A',M:'A',R:'A'},
+         smartScore:9, shortInt:'1.3%', ivRank:39, opt:'Long Call',
+         thesis:'Platform consolidation winner; ARR growth re-accelerating. Low IV — long call is cheap. Hold core position.' },
+  INTC:{ name:'Intel Corporation',     sent:'neut', signal:'WATCH',   stars:3, risk:'HIGH',
+         tip:'Hold', tipPT:'+4%', saQuant:'Hold', saGrades:{V:'C',G:'C',P:'C',M:'A',R:'B'},
+         smartScore:5, shortInt:'4.8%', ivRank:62, opt:'Covered Call',
+         thesis:'Foundry turnaround visible; momentum has re-rated the name off the lows. Confirm with volume on breakouts; size conservatively.' },
   IONQ:{ name:'IonQ Inc',              sent:'bull', signal:'ENTER',   stars:4, risk:'SPECULATIVE',
-         entry:'35–38',  t1:'44',  t2:'52',  stop:'31',
-         tip:'Buy', tipPT:'$50', saQuant:'Hold', saGrades:{V:'F',G:'B',P:'D',M:'A',R:'B'},
-         smartScore:7, shortInt:'8.4%', iv:92,
-         opt:'Long Call',        strike:'$40 Call',         exp:'May 16', dte:25,
-         delta:.45, theta:-0.28, vega:.74,
-         thesis:'Government quantum contract pipeline building; algorithmic qubit advantage claim gaining credibility. High IV — size very small, lottery-ticket sizing only. ⚠️ Speculative.' },
-  RGTI:{ name:'Rigetti Computing',     sent:'bear', signal:'AVOID',   stars:1, risk:'SPECULATIVE',
-         entry:'10–12',  t1:'14',  t2:'17',  stop:'8.5',
-         tip:'Hold', tipPT:'$12', saQuant:'Sell', saGrades:{V:'F',G:'C',P:'F',M:'C',R:'D'},
-         smartScore:3, shortInt:'14.2%', iv:98,
-         opt:'Long Put',         strike:'$10 Put',          exp:'Apr 25', dte:4,
-         delta:-.52, theta:-0.19, vega:.41,
-         thesis:'Missed Q1 revenue; secondary offering dilution risk. Highest short interest on watchlist. Avoid longs — put for speculative downside hedge only. ⚠️ Extreme risk.' },
+         tip:'Buy', tipPT:'+12%', saQuant:'Hold', saGrades:{V:'F',G:'B',P:'D',M:'A',R:'B'},
+         smartScore:7, shortInt:'8.4%', ivRank:92, opt:'Long Call',
+         thesis:'Government quantum contract pipeline building; algorithmic qubit edge gaining credibility. Very high IV — lottery-ticket sizing only. ⚠️' },
+  RGTI:{ name:'Rigetti Computing',     sent:'neut', signal:'WATCH',   stars:2, risk:'SPECULATIVE',
+         tip:'Hold', tipPT:'+5%', saQuant:'Hold', saGrades:{V:'F',G:'C',P:'F',M:'B',R:'C'},
+         smartScore:4, shortInt:'12.5%', ivRank:98, opt:'Long Call',
+         thesis:'Highly volatile quantum name — trades on sentiment + news flow. Only enter on confirmed breakouts with stop discipline. ⚠️ Extreme risk.' },
 };
 
 const SYMS   = ['NVDA','TSLA','PLTR','AMD','MU','CRWD','INTC','IONQ','RGTI'];
-const MKT    = ['^GSPC','^IXIC','^DJI','^RUT','^VIX','^TNX','DX-Y.NYB','CL=F','GC=F','BTC-USD','ETH-USD'];
+const MKT    = ['^GSPC','^IXIC','^DJI','^RUT','^VIX','^TNX','DX-Y.NYB','CL=F','GC=F','BTC-USD','ETH-USD',
+                '^N225','^HSI','000001.SS','^GDAXI','^FTSE','^FCHI','SOL-USD'];
 const ALL    = [...SYMS,...MKT];
+
+// Live technicals & sentiment — populated by fetchTech / fetchFG
+let TECH = {};
+let FG   = null;
 
 const sentMap = { bull:{label:'Bullish',cls:'b-bull'}, bear:{label:'Bearish',cls:'b-bear'}, neut:{label:'Neutral',cls:'b-neut'} };
 const sigMap  = { 'BUY DIP':'s-buy','ENTER':'s-buy','HOLD':'s-hold','WATCH':'s-watch','AVOID':'s-sell' };
 const riskMap = { LOW:'rt-low', MEDIUM:'rt-med', HIGH:'rt-hi', SPECULATIVE:'rt-spec' };
 
-// ── FETCH from local server (http://localhost:8765) ───
+// ── FETCH (auto-detects local vs deployed backend) ────
+const API_BASE = (() => {
+  const h = location.hostname;
+  if (h === 'localhost' || h === '127.0.0.1' || h === '') return 'http://localhost:8765';
+  // Deployed backend on Render — replace if URL changes:
+  return 'https://edge-advisor-api.onrender.com';
+})();
+
+async function fetchJSON(path, timeoutMs=15000){
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${API_BASE}${path}`, { signal: controller.signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } finally { clearTimeout(timer); }
+}
+
 async function fetchQuotes() {
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 15000);
-    const res = await fetch('http://localhost:8765/quotes', { signal: controller.signal });
-    clearTimeout(timer);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
+    const data = await fetchJSON('/quotes');
     const results = data?.quoteResponse?.result;
     if (!results?.length) throw new Error('Empty response');
     return results;
   } catch(e) {
     document.getElementById('watchlist-body').innerHTML = `
-      <tr><td colspan="11" style="padding:24px;text-align:center;">
+      <tr><td colspan="12" style="padding:24px;text-align:center;">
         <div style="color:var(--yellow);font-weight:700;font-size:13px;margin-bottom:10px;">
-          ⚠️ Server not running
+          ⚠️ Backend unreachable
         </div>
         <div style="color:var(--muted);font-size:12px;line-height:2;">
-          Start the data server in your terminal:<br>
-          <code style="background:#0d1117;padding:6px 18px;border-radius:4px;color:var(--green);display:inline-block;">
-            python3 /Users/rajamac/claude-projects/finance-dashboard/server.py
-          </code><br>
-          Then open &nbsp;<strong style="color:var(--blue);">http://localhost:8765</strong>&nbsp; in your browser.
+          API: <strong style="color:var(--blue);">${API_BASE}</strong><br>
+          If running locally: <code style="background:#0d1117;padding:6px 18px;border-radius:4px;color:var(--green);">python3 server.py</code>
         </div>
       </td></tr>`;
-    document.getElementById('key-banner').style.display = 'none';
     return null;
   }
 }
+
+async function fetchTech(){ try { TECH = await fetchJSON('/technicals', 30000) || {}; } catch(e){ TECH = {}; } }
+async function fetchFG()  { try { FG   = await fetchJSON('/feargreed', 8000);         } catch(e){ FG = null; } }
 
 // ── HELPERS ───────────────────────────────────────────
 const fmtVol = v => !v?'—':v>=1e9?(v/1e9).toFixed(1)+'B':v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?(v/1e3).toFixed(0)+'K':v;
@@ -558,40 +549,145 @@ const cls = v => v==null?'':v>=0?'up':'dn';
 const stars = n => '★'.repeat(n)+'☆'.repeat(5-n);
 const gradeEl = g => `<span class="grade g${(g||'?').toLowerCase()}">${g||'?'}</span>`;
 const smartCls = s => s>=8?'sc-hi':s>=5?'sc-mid':'sc-lo';
+const fmt = (v, d=2) => v==null?'—':Number(v).toFixed(d);
+const fmtP = v => v==null?'—':'$'+Number(v).toFixed(Number(v)<20?2:Number(v)<100?1:0);
+const trendLabel = { strong_up:'↑ Strong Uptrend', up:'↑ Uptrend', range:'↔ Consolidation', down:'↓ Downtrend', strong_down:'↓ Strong Downtrend' };
+const trendCls   = { strong_up:'tv-up', up:'tv-up', range:'nt', down:'tv-dn', strong_down:'tv-dn' };
+
+// Round to a sensible options strike
+function roundStrike(x){
+  if(!isFinite(x)||x<=0) return null;
+  if(x < 15)  return Math.round(x*2)/2;        // $0.50
+  if(x < 50)  return Math.round(x);            // $1
+  if(x < 150) return Math.round(x/2.5)*2.5;    // $2.50
+  if(x < 400) return Math.round(x/5)*5;        // $5
+  return Math.round(x/10)*10;                  // $10
+}
+
+// Derive swing trade plan from live technicals + sentiment bias
+function derivePlan(t, sent){
+  if(!t) return null;
+  const { last, atr14:atr, support1:s1, resistance1:r1, vwap } = t;
+  if(last==null||atr==null) return null;
+  if(sent === 'bear'){
+    const entryLo = last - 0.2*atr;
+    const entryHi = Math.min(r1, last + 0.7*atr);
+    return {
+      entryLo, entryHi,
+      t1: last - 2*atr,
+      t2: last - 4*atr,
+      stop: last + 1.5*atr,
+      bias: 'SHORT',
+    };
+  }
+  const entryLo = Math.max(s1 ?? last, last - 0.7*atr);
+  const entryHi = last + 0.2*atr;
+  return {
+    entryLo, entryHi,
+    t1: Math.min(last + 2*atr, r1 || Infinity) === Infinity ? last + 2*atr : last + 2*atr,
+    t2: last + 4*atr,
+    stop: Math.max((s1 ?? last) * 0.985, last - 1.8*atr),
+    bias: 'LONG',
+  };
+}
+
+// Derive a realistic options play from sentiment + last price
+function deriveOptions(t, sent, strategy){
+  if(!t) return null;
+  const { last } = t;
+  if(last==null) return null;
+  const strat = strategy || (sent==='bear' ? 'Bear Put Spread' : 'Bull Call Spread');
+  let legs = '', delta=0, theta=0, vega=0;
+  if(strat.includes('Bull Call Spread')){
+    const k1 = roundStrike(last*1.015), k2 = roundStrike(last*1.07);
+    legs = `Buy $${k1} C / Sell $${k2} C`;
+    delta = .45; theta = -0.12; vega = .28;
+  } else if(strat.includes('Bear Put Spread')){
+    const k1 = roundStrike(last*0.985), k2 = roundStrike(last*0.93);
+    legs = `Buy $${k1} P / Sell $${k2} P`;
+    delta = -.45; theta = -0.12; vega = .28;
+  } else if(strat.includes('Iron Condor')){
+    const s1=roundStrike(last*0.92), s2=roundStrike(last*0.96),
+          s3=roundStrike(last*1.04), s4=roundStrike(last*1.08);
+    legs = `$${s1}/$${s2}P · $${s3}/$${s4}C`;
+    delta = .02; theta = +0.25; vega = -.35;
+  } else if(strat.includes('Long Call')){
+    legs = `Buy $${roundStrike(last*1.02)} C`;
+    delta = .48; theta = -0.18; vega = .42;
+  } else if(strat.includes('Long Put')){
+    legs = `Buy $${roundStrike(last*0.98)} P`;
+    delta = -.48; theta = -0.18; vega = .42;
+  } else if(strat.includes('Covered Call')){
+    legs = `Long 100 sh · Sell $${roundStrike(last*1.05)} C`;
+    delta = .65; theta = +0.06; vega = -.15;
+  } else {
+    legs = `Buy $${roundStrike(last*1.02)} C`;
+    delta = .48; theta = -0.18; vega = .42;
+  }
+  // Expiry ~30 DTE, next standard monthly
+  const d = new Date(); d.setDate(d.getDate()+30);
+  const exp = d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  return { strat, legs, exp, dte:30, delta, theta, vega };
+}
 
 // ── MARKET BAR ────────────────────────────────────────
 function renderMarket(map){
-  const items = [
-    ['^GSPC','spx',true],['^IXIC','ixic',true],['^DJI','dji',true],
-    ['^RUT','rut',true],['^VIX','vix',false],['^TNX','tnx',false],
-    ['DX-Y.NYB','dxy',false],['CL=F','oil',false],['GC=F','gold',false],
-    ['BTC-USD','btc',false],['ETH-USD','eth',false],
+  // US indices — show % change
+  const pctItems = [
+    ['^GSPC','spx'],['^IXIC','ixic'],['^DJI','dji'],['^RUT','rut'],
+    ['^N225','n225'],['^HSI','hsi'],['000001.SS','sse'],
+    ['^GDAXI','dax'],['^FTSE','ftse'],['^FCHI','cac'],
   ];
-  items.forEach(([sym,id,usePct])=>{
-    const q = map[sym]; if(!q) return;
-    const el = document.getElementById(id); if(!el) return;
-    if(usePct){
-      const v = q.regularMarketChangePercent;
-      el.textContent = pct(v);
-      el.className = 'val '+cls(v);
-    } else if(id==='vix'){
-      const v = q.regularMarketPrice;
-      el.textContent = v.toFixed(1);
-      const regime = v<15?'up':v<20?'up':v<28?'nt':'dn';
-      el.className = 'val '+regime;
-      updateVixRegime(v);
-    } else if(id==='tnx'){
-      el.textContent = q.regularMarketPrice.toFixed(2)+'%';
-      el.className = 'val '+(q.regularMarketChange>=0?'dn':'up');
-    } else if(id==='dxy'){
-      el.textContent = q.regularMarketPrice.toFixed(2);
-      el.className = 'val '+cls(q.regularMarketChangePercent);
-    } else {
-      const v = q.regularMarketPrice;
-      el.textContent = v>=1000?'$'+Math.round(v).toLocaleString():'$'+v.toFixed(2);
-      el.className = 'val '+cls(q.regularMarketChangePercent);
-    }
+  pctItems.forEach(([sym,id])=>{
+    const q = map[sym]; const el = document.getElementById(id);
+    if(!q || !el) return;
+    const v = q.regularMarketChangePercent;
+    el.textContent = pct(v);
+    el.className = 'val '+cls(v);
   });
+  // VIX — absolute + regime update
+  if(map['^VIX']){
+    const v = map['^VIX'].regularMarketPrice;
+    const el = document.getElementById('vix');
+    el.textContent = v.toFixed(1);
+    el.className = 'val '+(v<20?'up':v<28?'nt':'dn');
+    updateVixRegime(v);
+  }
+  // 10Y yield — % with inverted color (rising yield = risk-off)
+  if(map['^TNX']){
+    const q = map['^TNX'];
+    const el = document.getElementById('tnx');
+    el.textContent = q.regularMarketPrice.toFixed(2)+'%';
+    el.className = 'val '+(q.regularMarketChange>=0?'dn':'up');
+  }
+  // DXY — price
+  if(map['DX-Y.NYB']){
+    const q = map['DX-Y.NYB'];
+    const el = document.getElementById('dxy');
+    el.textContent = q.regularMarketPrice.toFixed(2);
+    el.className = 'val '+cls(q.regularMarketChangePercent);
+  }
+  // Commodities + crypto — price
+  const priceItems = [['CL=F','oil'],['GC=F','gold'],['BTC-USD','btc'],['ETH-USD','eth'],['SOL-USD','sol']];
+  priceItems.forEach(([sym,id])=>{
+    const q = map[sym]; const el = document.getElementById(id);
+    if(!q || !el) return;
+    const v = q.regularMarketPrice;
+    el.textContent = v>=1000?'$'+Math.round(v).toLocaleString():'$'+v.toFixed(2);
+    el.className = 'val '+cls(q.regularMarketChangePercent);
+  });
+}
+
+function renderFearGreed(){
+  if(!FG) return;
+  const el = document.getElementById('fg-val');
+  const nd = document.getElementById('fg-needle');
+  const { score, label, direction } = FG;
+  const c = score<25?'dn':score<45?'nt':score<55?'nt':score<75?'up':'up';
+  el.className = 'val '+c;
+  const arrow = direction==='improving'?' ↑':direction==='deteriorating'?' ↓':'';
+  el.textContent = `${score} — ${label}${arrow}`;
+  nd.style.left = Math.max(2, Math.min(98, score))+'%';
 }
 
 function updateVixRegime(v){
@@ -609,15 +705,22 @@ function renderWatchlist(map){
   const body = document.getElementById('watchlist-body');
   body.innerHTML = '';
   SYMS.forEach(sym=>{
-    const q = map[sym];
-    const m = META[sym];
+    const q = map[sym]; const m = META[sym]; const t = TECH[sym];
     const price  = q?.regularMarketPrice;
     const chgPct = q?.regularMarketChangePercent;
-    const vol    = q?.regularMarketVolume;
-    const hi52   = q?.fiftyTwoWeekHigh;
-    const lo52   = q?.fiftyTwoWeekLow;
-    const rangeStr = hi52&&lo52 ? `$${lo52.toFixed(0)}–$${hi52.toFixed(0)}` : '—';
-    const s = sentMap[m.sent];
+    const dayRange = (t?.dayLow!=null && t?.dayHigh!=null)
+      ? `$${t.dayLow.toFixed(2)} – $${t.dayHigh.toFixed(2)}`
+      : (q?.regularMarketDayLow!=null && q?.regularMarketDayHigh!=null)
+        ? `$${q.regularMarketDayLow.toFixed(2)} – $${q.regularMarketDayHigh.toFixed(2)}` : '—';
+    const vr = t?.volRatio;
+    const volCell = t?.todayVol!=null
+      ? `${fmtVol(t.todayVol)} <span style="color:var(--muted);font-size:10px;">(${vr?vr.toFixed(1)+'×':''})</span>`
+      : fmtVol(q?.regularMarketVolume);
+    const vrCls = vr==null ? '' : vr>=1.5 ? 'up' : vr<0.6 ? 'dn' : 'nt';
+    const rsi = t?.rsi14;
+    const rsiCls = rsi==null?'':rsi>70?'dn':rsi<30?'up':'nt';
+    const trendVal = t?.trend ? trendLabel[t.trend] : '—';
+    const trendC   = t?.trend ? trendCls[t.trend]   : '';
     const sigCls = sigMap[m.signal]||'s-watch';
     const scCls  = smartCls(m.smartScore);
     body.innerHTML += `
@@ -625,12 +728,13 @@ function renderWatchlist(map){
         <td><div class="sym">${sym}</div><div class="co">${m.name}</div></td>
         <td style="font-weight:800;">${price!=null?'$'+price.toFixed(2):'—'}</td>
         <td class="${cls(chgPct)}" style="font-weight:700;">${pct(chgPct)}</td>
-        <td style="color:var(--muted);">${fmtVol(vol)}</td>
-        <td style="font-size:11px;color:var(--muted);">${rangeStr}</td>
-        <td><span class="badge ${m.tip.includes('Strong')?'b-bull':m.tip==='Sell'?'b-bear':'b-neut'}" style="font-size:9px;">${m.tip}</span><div style="font-size:10px;color:var(--muted);margin-top:2px;">${m.tipPT}</div></td>
+        <td style="font-size:11px;color:var(--muted);white-space:nowrap;">${dayRange}</td>
+        <td class="${vrCls}" style="font-size:11px;font-weight:700;">${volCell}</td>
+        <td class="${rsiCls}" style="font-weight:700;">${rsi!=null?rsi.toFixed(1):'—'}</td>
+        <td class="${trendC}" style="font-size:11px;font-weight:700;">${trendVal}</td>
+        <td><span class="badge ${m.tip.includes('Strong')?'b-bull':m.tip==='Sell'?'b-bear':'b-neut'}" style="font-size:9px;">${m.tip}</span></td>
         <td><span class="badge ${m.saQuant.includes('Strong Buy')?'b-bull':m.saQuant.includes('Sell')?'b-bear':'b-neut'}" style="font-size:9px;">${m.saQuant}</span></td>
-        <td><span class="score ${scCls}">${m.smartScore}/10</span></td>
-        <td><span class="badge ${s.cls}">${s.label}</span></td>
+        <td><span class="score ${scCls}">${m.smartScore}</span></td>
         <td><span class="sig ${sigCls}">${m.signal}</span></td>
         <td><span class="stars">${stars(m.stars)}</span></td>
       </tr>`;
@@ -642,8 +746,7 @@ function renderTradeCards(map){
   const grid = document.getElementById('trade-grid');
   grid.innerHTML = '';
   SYMS.forEach(sym=>{
-    const q = map[sym];
-    const m = META[sym];
+    const q = map[sym]; const m = META[sym]; const t = TECH[sym];
     const price  = q?.regularMarketPrice;
     const chgPct = q?.regularMarketChangePercent;
     const priceStr = price!=null?'$'+price.toFixed(2):'—';
@@ -651,6 +754,51 @@ function renderTradeCards(map){
     const chgCls   = cls(chgPct);
     const g = m.saGrades;
     const rCls = riskMap[m.risk]||'rt-med';
+    const plan = derivePlan(t, m.sent);
+    const opt  = deriveOptions(t, m.sent, m.opt);
+    const rsi  = t?.rsi14;
+    const rsiCls = rsi==null?'':rsi>70?'tv-dn':rsi<30?'tv-up':'';
+    const rsiTag = rsi==null?'':rsi>70?' overbought':rsi<30?' oversold':'';
+    const macdCross = t?.macdCross;
+    const macdLabel = macdCross==='bull_cross'?'Bull Cross ↑':macdCross==='bear_cross'?'Bear Cross ↓':macdCross==='bull'?'Bullish':macdCross==='bear'?'Bearish':'Flat';
+    const macdTvCls = (macdCross||'').includes('bull')?'tv-up':(macdCross||'').includes('bear')?'tv-dn':'';
+    const vwapCls = (t?.vwap!=null && price!=null) ? (price>t.vwap?'tv-up':'tv-dn') : '';
+    const trendTxt = t?.trend ? trendLabel[t.trend] : '—';
+    const trendTC  = t?.trend ? trendCls[t.trend]   : '';
+    const bbSqueezeTag = t?.bbSqueeze ? ' <span class="opt-tag" style="background:rgba(240,136,62,.15);color:var(--orange);border-color:rgba(240,136,62,.3);">SQUEEZE</span>' : '';
+
+    const techHTML = t ? `
+          <div class="tc-sec">
+            <div class="tc-sec-title">Technical Snapshot<span style="color:var(--muted);font-weight:400;">${trendTxt}</span></div>
+            <div class="tc-row"><span class="tl">EMA Stack</span><span class="tv" style="font-size:10px;">9:${fmtP(t.ema9)} · 20:${fmtP(t.ema20)} · 50:${fmtP(t.ema50)}${t.ema200!=null?' · 200:'+fmtP(t.ema200):''}</span></div>
+            <div class="tc-row"><span class="tl">RSI(14)</span><span class="tv ${rsiCls}">${rsi!=null?rsi.toFixed(1)+rsiTag:'—'}</span></div>
+            <div class="tc-row"><span class="tl">MACD</span><span class="tv ${macdTvCls}">${macdLabel} &nbsp;(${t.macd>=0?'+':''}${t.macd})</span></div>
+            <div class="tc-row"><span class="tl">Bollinger (20,2)</span><span class="tv" style="font-size:10px;">${fmtP(t.bbLower)} · ${fmtP(t.bbMid)} · ${fmtP(t.bbUpper)}${bbSqueezeTag}</span></div>
+            <div class="tc-row"><span class="tl">VWAP (20d)</span><span class="tv ${vwapCls}">${fmtP(t.vwap)} ${price!=null&&t.vwap!=null?'('+(price>t.vwap?'above':'below')+')':''}</span></div>
+            <div class="tc-row"><span class="tl">ATR(14)</span><span class="tv">$${fmt(t.atr14,2)}</span></div>
+            <div class="tc-row"><span class="tl">S / R (20d)</span><span class="tv" style="font-size:10px;"><span class="tv-up">${fmtP(t.support1)}</span> / <span class="tv-dn">${fmtP(t.resistance1)}</span></span></div>
+          </div>` : `
+          <div class="tc-sec" style="color:var(--muted);font-size:11px;">Technical data loading...</div>`;
+
+    const swingHTML = plan ? `
+          <div class="tc-sec">
+            <div class="tc-sec-title">Swing Trade <span style="color:var(--muted);font-weight:400;">${plan.bias} · 2–10 days · derived from ATR/S/R</span></div>
+            <div class="tc-row"><span class="tl">Entry Zone</span><span class="tv tv-bl">${fmtP(plan.entryLo)} – ${fmtP(plan.entryHi)}</span></div>
+            <div class="tc-row"><span class="tl">Target 1</span><span class="tv tv-up">${fmtP(plan.t1)}</span></div>
+            <div class="tc-row"><span class="tl">Target 2</span><span class="tv tv-up">${fmtP(plan.t2)}</span></div>
+            <div class="tc-row"><span class="tl">Stop Loss</span><span class="tv tv-dn">${fmtP(plan.stop)}</span></div>
+          </div>` : '';
+
+    const optHTML = opt ? `
+          <div class="tc-sec">
+            <div class="tc-sec-title">Options Play<span class="opt-tag">IV Rank ${m.ivRank}%</span></div>
+            <div class="tc-row"><span class="tl">Strategy</span><span class="tv tv-pu">${opt.strat}</span></div>
+            <div class="tc-row"><span class="tl">Legs</span><span class="tv" style="font-size:10px;">${opt.legs}</span></div>
+            <div class="tc-row"><span class="tl">Expiry</span><span class="tv">${opt.exp} (${opt.dte} DTE)</span></div>
+            <div class="tc-row"><span class="tl">Greeks</span><span class="tv" style="font-size:10px;">Δ ${opt.delta>0?'+':''}${opt.delta} &nbsp;Θ ${opt.theta} &nbsp;V ${opt.vega}</span></div>
+            <div class="tc-row"><span class="tl">Exit Rule</span><span class="tv" style="font-size:10px;">50% profit or 2× loss</span></div>
+          </div>` : '';
+
     grid.innerHTML += `
       <div class="tc">
         <div class="tc-hdr">
@@ -671,7 +819,6 @@ function renderTradeCards(map){
         </div>
         <div class="tc-body">
 
-          <!-- SA Grades -->
           <div class="tc-sec">
             <div class="tc-sec-title">SA Factor Grades<span style="color:var(--muted);font-weight:400;">Seeking Alpha Quant</span></div>
             <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px;text-align:center;">
@@ -684,26 +831,10 @@ function renderTradeCards(map){
             </div>
           </div>
 
-          <!-- Swing Trade -->
-          <div class="tc-sec">
-            <div class="tc-sec-title">Swing Trade <span style="color:var(--muted);font-weight:400;">2–10 days</span></div>
-            <div class="tc-row"><span class="tl">Entry Zone</span><span class="tv tv-bl">$${m.entry}</span></div>
-            <div class="tc-row"><span class="tl">Target 1</span><span class="tv tv-up">$${m.t1}</span></div>
-            <div class="tc-row"><span class="tl">Target 2</span><span class="tv tv-up">$${m.t2}</span></div>
-            <div class="tc-row"><span class="tl">Stop Loss</span><span class="tv tv-dn">$${m.stop}</span></div>
-          </div>
+          ${techHTML}
+          ${swingHTML}
+          ${optHTML}
 
-          <!-- Options -->
-          <div class="tc-sec">
-            <div class="tc-sec-title">Options Play<span class="opt-tag">IV ${m.iv}%</span></div>
-            <div class="tc-row"><span class="tl">Strategy</span><span class="tv tv-pu">${m.opt}</span></div>
-            <div class="tc-row"><span class="tl">Strike / Legs</span><span class="tv">${m.strike}</span></div>
-            <div class="tc-row"><span class="tl">Expiry</span><span class="tv">${m.exp} (${m.dte} DTE)</span></div>
-            <div class="tc-row"><span class="tl">Greeks</span><span class="tv" style="font-size:10px;">Δ ${m.delta>0?'+':''}${m.delta} &nbsp;Θ ${m.theta} &nbsp;V ${m.vega}</span></div>
-            <div class="tc-row"><span class="tl">Exit Rule</span><span class="tv" style="font-size:10px;">50% profit or 2× loss</span></div>
-          </div>
-
-          <!-- Thesis -->
           <div style="font-size:11px;color:var(--muted);line-height:1.5;padding:6px 0 2px;">${m.thesis}</div>
 
         </div>
@@ -789,19 +920,68 @@ function renderNews(){
 }
 
 // ── MARKET STATUS ─────────────────────────────────────
+// US regular session: 9:30 AM – 4:00 PM ET (570–960 min)
+// Pre-market:         4:00 AM – 9:30 AM ET (240–570 min)
+// After-hours:        4:00 PM – 8:00 PM ET (960–1200 min)
 function updateMarketStatus(){
-  const now = new Date();
-  const et  = new Date(now.toLocaleString('en-US',{timeZone:'America/New_York'}));
-  const h = et.getHours(), m = et.getMinutes(), d = et.getDay();
-  const mins = h*60+m;
+  const et  = new Date(new Date().toLocaleString('en-US',{timeZone:'America/New_York'}));
+  const mins = et.getHours()*60 + et.getMinutes();
+  const d = et.getDay();
   const dot = document.getElementById('mkt-dot');
   const lbl = document.getElementById('mkt-label');
-  if(d===0||d===6){ dot.className='dot dot-red'; lbl.textContent='MARKET CLOSED'; lbl.style.color='var(--red)'; }
-  else if(mins>=930&&mins<1080){ dot.className='dot dot-green'; lbl.textContent='PRE-MARKET'; lbl.style.color='var(--yellow)'; }
-  else if(mins>=1080&&mins<960+480){ // wrong logic fix:
-    if(mins>=570&&mins<960){ dot.className='dot dot-green'; lbl.textContent='MARKET OPEN'; lbl.style.color='var(--green)'; }
-    else{ dot.className='dot dot-red'; lbl.textContent='AFTER-HOURS'; lbl.style.color='var(--muted)'; }
-  } else { dot.className='dot dot-red'; lbl.textContent='AFTER-HOURS'; lbl.style.color='var(--muted)'; }
+  const set = (dCls, text, color) => {
+    dot.className = 'dot '+dCls;
+    lbl.textContent = text;
+    lbl.style.color = color;
+  };
+  if(d===0 || d===6){                       set('dot-red',   'MARKET CLOSED',  'var(--red)'); return; }
+  if(mins >= 570  && mins < 960)            { set('dot-green', 'MARKET OPEN',    'var(--green)');  return; }
+  if(mins >= 240  && mins < 570)            { set('dot-green', 'PRE-MARKET',     'var(--yellow)'); return; }
+  if(mins >= 960  && mins < 1200)           { set('dot-red',   'AFTER-HOURS',    'var(--orange)'); return; }
+  set('dot-red', 'CLOSED', 'var(--muted)');
+}
+
+// ── NandaEdge VIX Contrarian Playbook ─────────────────
+// Rule: buy stocks when VIX ≥ 30 · load up when VIX ≥ 45 · sell when VIX ≤ 14
+// This is a long-horizon contrarian equity rule. Inverse to the options-side
+// VIX regime table (which governs sell-IV vs. buy-IV bias).
+function renderVixPlaybook(vix){
+  const el = document.getElementById('vix-playbook'); if(!el) return;
+  if(vix == null){ el.innerHTML = '<div style="color:var(--muted);font-size:11px;padding:12px 14px;">Awaiting VIX...</div>'; return; }
+  let signal, signalCls, action, rationale;
+  if(vix <= 14){        signal='SELL / TRIM';     signalCls='s-sell';  action='Take profits — trim equity exposure';     rationale='Complacency ≤ 14: historically precedes corrections. Lock in gains.'; }
+  else if(vix < 20){    signal='HOLD / NEUTRAL';  signalCls='s-hold';  action='No forced action — hold current exposure'; rationale='Normal 14–20: no contrarian edge.'; }
+  else if(vix < 30){    signal='WATCH';           signalCls='s-watch'; action='Prepare buy list — don\'t front-run';       rationale='Elevated 20–30: wait for ≥ 30 trigger.'; }
+  else if(vix < 45){    signal='BUY';             signalCls='s-buy';   action='Start accumulating quality equities';      rationale='Fear ≥ 30: historically favorable multi-month entry zone.'; }
+  else {                signal='LOAD UP';         signalCls='s-buy';   action='Aggressively add — pyramid into quality';  rationale='Panic ≥ 45: 2008 / 2020-style capitulation — highest-edge zone.'; }
+  el.innerHTML = `
+    <div class="risk-grid" style="grid-template-columns:1fr 1fr;">
+      <div class="risk-item">
+        <div class="risk-lbl">Current VIX</div>
+        <div class="risk-val" style="color:${vix<=14?'var(--red)':vix<30?'var(--yellow)':vix<45?'var(--green)':'var(--green)'};">${vix.toFixed(1)}</div>
+      </div>
+      <div class="risk-item">
+        <div class="risk-lbl">NandaEdge Signal</div>
+        <div class="risk-val"><span class="sig ${signalCls}">${signal}</span></div>
+      </div>
+    </div>
+    <div style="padding:0 13px 13px;">
+      <div style="background:var(--card2);border-radius:6px;padding:10px 12px;font-size:11px;line-height:1.5;">
+        <div style="font-weight:800;margin-bottom:4px;color:var(--text);">${action}</div>
+        <div style="color:var(--muted);">${rationale}</div>
+      </div>
+      <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin:10px 0 6px;">Contrarian Trigger Levels</div>
+      <div style="display:grid;gap:4px;">
+        <div class="vix-row ${vix<=14?'vix-active':''}" style="background:rgba(248,81,73,.08);"><div class="vix-range dn">≤ 14</div><div class="vix-regime">SELL / trim equity — complacency warning</div></div>
+        <div class="vix-row ${vix>14&&vix<30?'vix-active':''}" style="background:rgba(210,153,34,.08);"><div class="vix-range nt">14 – 30</div><div class="vix-regime">Hold / watch — no edge</div></div>
+        <div class="vix-row ${vix>=30&&vix<45?'vix-active':''}" style="background:rgba(63,185,80,.10);"><div class="vix-range up">≥ 30</div><div class="vix-regime">BUY — start accumulating quality</div></div>
+        <div class="vix-row ${vix>=45?'vix-active':''}" style="background:rgba(63,185,80,.18);"><div class="vix-range up">≥ 45</div><div class="vix-regime">LOAD UP — aggressive accumulation</div></div>
+      </div>
+      <div style="font-size:10px;color:var(--muted);line-height:1.4;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">
+        <strong style="color:var(--yellow);">Discipline:</strong> scale in — never deploy &gt; 20% of dry powder on any single VIX print.
+        Combine with position-sizing rules (max 5% / name, max 25% / sector). Rule is contrarian to options-side IV regime above.
+      </div>
+    </div>`;
 }
 
 function updateClock(){
