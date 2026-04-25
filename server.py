@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """
-NandaEdge Data Server — v2.1
-  Dashboard   → http://localhost:8765/
-  Quotes      → http://localhost:8765/quotes       (realtime, all symbols)
-  Technicals  → http://localhost:8765/technicals   (computed indicators, watchlist)
-  Fear/Greed  → http://localhost:8765/feargreed    (CNN proxy)
-  Auto-kills any existing process on port 8765 before starting.
-  Requires: pip3 install yfinance pandas numpy
+NandaEdge Data Server — v2.2
+  Dashboard   → /
+  Quotes      → /quotes        ?symbols=NVDA,TSLA,...   realtime quotes
+  Technicals  → /technicals    ?symbols=...             EMA/RSI/MACD/BB/ATR/VWAP
+  Forecast    → /forecast      ?symbols=...             GBM projections (1w..5y)
+  Fear/Greed  → /feargreed                              CNN proxy
+  Cloud-ready: reads PORT/HOST from env; binds 0.0.0.0 when PORT is set.
 """
-import os, sys, signal, time, json, socket, warnings, urllib.request, threading
+import os, sys, signal, time, json, math, socket, warnings, urllib.request, threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from urllib.parse import urlparse, parse_qs
 
 warnings.filterwarnings("ignore")
 
@@ -26,11 +27,30 @@ MARKETS = [
 ]
 ALL = WATCH + MARKETS
 
-# ── Caching — technicals are expensive; cache ~5 min ────
-_tech_cache = {"t": 0, "data": None}
-_fg_cache   = {"t": 0, "data": None}
-TECH_TTL = 300   # 5 min
-FG_TTL   = 600   # 10 min
+# ── Caching — per-symbol so user watchlists share cache ───
+_tech_cache  = {}                     # sym -> {"t": float, "data": dict}
+_fcst_cache  = {}                     # sym -> {"t": float, "data": dict}
+_fg_cache    = {"t": 0, "data": None}
+TECH_TTL = 300                        # 5 min
+FCST_TTL = 3600                       # 1 hour — forecasts don't need to update often
+FG_TTL   = 600                        # 10 min
+
+# ── Symbol parsing / validation ──────────────────────────
+import re
+_SYM_RE = re.compile(r"^[A-Za-z0-9.\-^=]{1,12}$")
+
+def parse_symbols(query, default):
+    """Parse ?symbols=NVDA,TSLA,...  Returns deduped list, falls back to default."""
+    raw = (query.get("symbols", [""])[0] or "").strip()
+    if not raw:
+        return list(default)
+    syms = []
+    seen = set()
+    for s in raw.split(","):
+        s = s.strip().upper()
+        if s and _SYM_RE.match(s) and s not in seen:
+            seen.add(s); syms.append(s)
+    return syms or list(default)
 
 # ── Port Management ────────────────────────────────────
 def kill_port(port):
@@ -49,12 +69,13 @@ def port_free(port):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         return s.connect_ex(("localhost", port)) != 0
 
-# ── Quotes (realtime, all symbols) ─────────────────────
-def fetch_quotes():
+# ── Quotes (realtime) ──────────────────────────────────
+def fetch_quotes(syms=None):
     import yfinance as yf
+    syms = syms or ALL
     results = []
-    tickers = yf.Tickers(" ".join(ALL))
-    for sym in ALL:
+    tickers = yf.Tickers(" ".join(syms))
+    for sym in syms:
         try:
             fi     = tickers.tickers[sym].fast_info
             price  = fi.last_price or 0
@@ -78,23 +99,33 @@ def fetch_quotes():
             print(f"  WARN quote {sym}: {e}", flush=True)
     return {"quoteResponse": {"result": results, "error": None}}
 
-# ── Technicals (computed indicators, watchlist only) ───
-def fetch_tech():
+# ── Technicals (computed indicators) ───────────────────
+def fetch_tech(syms=None):
+    syms = syms or WATCH
     now = time.time()
-    if _tech_cache["data"] and (now - _tech_cache["t"] < TECH_TTL):
-        return _tech_cache["data"]
+
+    out = {}
+    fresh_needed = []
+    for sym in syms:
+        c = _tech_cache.get(sym)
+        if c and (now - c["t"] < TECH_TTL):
+            out[sym] = c["data"]
+        else:
+            fresh_needed.append(sym)
+
+    if not fresh_needed:
+        return out
 
     import yfinance as yf
     import pandas as pd
     import numpy as np
 
-    df = yf.download(" ".join(WATCH), period="1y", interval="1d",
+    df = yf.download(" ".join(fresh_needed), period="1y", interval="1d",
                      group_by="ticker", threads=True, progress=False, auto_adjust=False)
 
-    out = {}
-    for sym in WATCH:
+    for sym in fresh_needed:
         try:
-            d = df[sym].dropna()
+            d = (df[sym].dropna() if isinstance(df.columns, pd.MultiIndex) else df.dropna())
             if len(d) < 30:
                 out[sym] = None
                 continue
@@ -202,11 +233,94 @@ def fetch_tech():
                 "avgVol30d":   avg_vol,
                 "volRatio":    round(vol_ratio, 2) if vol_ratio else None,
             }
+            _tech_cache[sym] = {"t": now, "data": out[sym]}
         except Exception as e:
             print(f"  WARN tech {sym}: {e}", flush=True)
             out[sym] = None
 
-    _tech_cache.update(t=now, data=out)
+    return out
+
+# ── Forecast (GBM-based price projection) ───────────────
+# Method: estimate drift μ and volatility σ from 2yr daily log returns,
+# project price assuming geometric Brownian motion:
+#   median = P0 * exp(μt)
+#   p25/p75 = P0 * exp(μt ± 0.6745·σ·√t)
+# Returns six horizons in trading days: 1w, 1mo, 3mo, 6mo, 1y, 5y.
+HORIZONS = [
+    ("1w",  5),    ("1mo", 21),   ("3mo", 63),
+    ("6mo", 126),  ("1y",  252),  ("5y", 1260),
+]
+
+def fetch_forecast(syms=None):
+    syms = syms or WATCH
+    now = time.time()
+
+    out = {}
+    fresh_needed = []
+    for sym in syms:
+        c = _fcst_cache.get(sym)
+        if c and (now - c["t"] < FCST_TTL):
+            out[sym] = c["data"]
+        else:
+            fresh_needed.append(sym)
+
+    if not fresh_needed:
+        return out
+
+    import yfinance as yf
+    import pandas as pd
+    import numpy as np
+
+    df = yf.download(" ".join(fresh_needed), period="2y", interval="1d",
+                     group_by="ticker", threads=True, progress=False, auto_adjust=True)
+
+    for sym in fresh_needed:
+        try:
+            d = (df[sym].dropna() if isinstance(df.columns, pd.MultiIndex) else df.dropna())
+            close = d["Close"]
+            if len(close) < 60:
+                out[sym] = None
+                continue
+            log_ret = np.log(close / close.shift(1)).dropna()
+            mu_d  = float(log_ret.mean())            # daily drift
+            sig_d = float(log_ret.std(ddof=1))       # daily vol
+            p0    = float(close.iloc[-1])
+
+            horizons = []
+            for label, t in HORIZONS:
+                drift = mu_d * t
+                vol_t = sig_d * math.sqrt(t)
+                median = p0 * math.exp(drift)
+                p25    = p0 * math.exp(drift - 0.6745 * vol_t)
+                p75    = p0 * math.exp(drift + 0.6745 * vol_t)
+                p05    = p0 * math.exp(drift - 1.6449 * vol_t)
+                p95    = p0 * math.exp(drift + 1.6449 * vol_t)
+                expRet = (median / p0 - 1.0) * 100.0
+                horizons.append({
+                    "label":  label,
+                    "days":   t,
+                    "median": round(median, 2),
+                    "p25":    round(p25, 2),
+                    "p75":    round(p75, 2),
+                    "p05":    round(p05, 2),
+                    "p95":    round(p95, 2),
+                    "expReturnPct": round(expRet, 2),
+                })
+
+            out[sym] = {
+                "last":     round(p0, 2),
+                "muDaily":  round(mu_d, 6),
+                "sigDaily": round(sig_d, 6),
+                "muAnnualPct":  round(mu_d  * 252 * 100, 2),
+                "sigAnnualPct": round(sig_d * math.sqrt(252) * 100, 2),
+                "horizons": horizons,
+                "method":   "GBM (μ,σ from 2yr daily log-returns)",
+            }
+            _fcst_cache[sym] = {"t": now, "data": out[sym]}
+        except Exception as e:
+            print(f"  WARN forecast {sym}: {e}", flush=True)
+            out[sym] = None
+
     return out
 
 # ── CNN Fear & Greed ───────────────────────────────────
@@ -242,7 +356,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200); self._cors(); self.end_headers()
 
     def do_GET(self):
-        path = self.path.split("?")[0]
+        parsed = urlparse(self.path)
+        path = parsed.path
+        qs   = parse_qs(parsed.query)
 
         if path in ("/", "/index.html"):
             try:
@@ -252,17 +368,27 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(404, "text/plain", b"index.html not found")
 
         elif path == "/quotes":
-            print(f"  [{time.strftime('%H:%M:%S')}] /quotes ...", end=" ", flush=True)
+            syms = parse_symbols(qs, ALL)
+            print(f"  [{time.strftime('%H:%M:%S')}] /quotes ({len(syms)}) ...", end=" ", flush=True)
             t0 = time.time()
-            data = fetch_quotes()
+            data = fetch_quotes(syms)
             n = len(data["quoteResponse"]["result"])
             print(f"{n} syms in {time.time()-t0:.1f}s", flush=True)
             self._send(200, "application/json", json.dumps(data).encode())
 
         elif path == "/technicals":
-            print(f"  [{time.strftime('%H:%M:%S')}] /technicals ...", end=" ", flush=True)
+            syms = parse_symbols(qs, WATCH)
+            print(f"  [{time.strftime('%H:%M:%S')}] /technicals ({len(syms)}) ...", end=" ", flush=True)
             t0 = time.time()
-            data = fetch_tech()
+            data = fetch_tech(syms)
+            print(f"{sum(1 for v in data.values() if v)} ok in {time.time()-t0:.1f}s", flush=True)
+            self._send(200, "application/json", json.dumps(data).encode())
+
+        elif path == "/forecast":
+            syms = parse_symbols(qs, WATCH)
+            print(f"  [{time.strftime('%H:%M:%S')}] /forecast ({len(syms)}) ...", end=" ", flush=True)
+            t0 = time.time()
+            data = fetch_forecast(syms)
             print(f"{sum(1 for v in data.values() if v)} ok in {time.time()-t0:.1f}s", flush=True)
             self._send(200, "application/json", json.dumps(data).encode())
 

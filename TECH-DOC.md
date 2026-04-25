@@ -8,9 +8,10 @@
 | **Backend API** | https://edge-advisor-api.onrender.com | Render (free) |
 | **Source repo** | https://github.com/nanda0210/edge-advisor | GitHub |
 
-API endpoints:
-- `GET /quotes` — realtime prices (watchlist + market indices)
-- `GET /technicals` — EMA/RSI/MACD/BB/ATR/VWAP/S&R (cached 5 min)
+API endpoints (all accept `?symbols=NVDA,TSLA,...`):
+- `GET /quotes` — realtime prices (default: watchlist + market indices)
+- `GET /technicals` — EMA/RSI/MACD/BB/ATR/VWAP/S&R (cached 5 min, per symbol)
+- `GET /forecast` — GBM price projections for 1w / 1mo / 3mo / 6mo / 1y / 5y (cached 1 hr, per symbol)
 - `GET /feargreed` — CNN Fear & Greed (cached 10 min)
 
 ---
@@ -159,6 +160,33 @@ Edit in `server.py:20` (`WATCH`) and `MARKETS` (line 21) for indices/commodities
 
 ---
 
+## Forecast model (GBM)
+
+For each ticker the backend computes:
+- **μ (drift)** — mean of daily log-returns over the last 2 years
+- **σ (vol)** — std-dev of daily log-returns over the last 2 years
+- **Projection** — `P_t = P_0 · exp(μt ± k·σ·√t)`
+  - **median** = `P_0 · exp(μt)`
+  - **P25 / P75** = ± 0.6745 σ√t (50% interval)
+  - **P05 / P95** = ± 1.6449 σ√t (90% interval)
+- Horizons: 1w (5d), 1mo (21d), 3mo (63d), 6mo (126d), 1y (252d), 5y (1260d)
+
+Caveats — the model assumes returns stay log-normal and stationary. It cannot capture regime changes, earnings, macro shocks, or M&A. **The 5-year band is informational only; do not trade on it.**
+
+---
+
+## Watchlist customization
+
+The watchlist is user-editable from the dashboard:
+- **Add**: type a symbol → click `+ Add`. Backend verifies it exists on Yahoo before saving.
+- **Remove**: click `✕` on any row.
+- **Reset**: restores the default 9 tickers.
+- Persisted in browser `localStorage` (key: `nandaedge.watchlist.v1`) — survives reload, per-browser.
+
+For tickers not in the static `META` table, the dashboard shows a default neutral profile while still computing live price, technicals, and forecast.
+
+---
+
 ## Deployment history
 
 | Date | Change |
@@ -166,3 +194,4 @@ Edit in `server.py:20` (`WATCH`) and `MARKETS` (line 21) for indices/commodities
 | 2026-04-21 | Initial commit — NandaEdge Advisor v2.0 (local-only) |
 | 2026-04-21 | README added |
 | 2026-04-25 | Made backend cloud-deployable; deployed to Render + GitHub Pages |
+| 2026-04-25 | Added `/forecast` (GBM) + user-editable watchlist (add/remove tickers) |

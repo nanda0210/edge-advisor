@@ -308,8 +308,17 @@ tr:hover td{background:#1c2128;transition:.12s;}
   <div class="sec-title">Watchlist — Live Prices &amp; Intelligence</div>
   <div class="card">
     <div class="card-hdr">
-      <span>9 Tickers — Real-Time via Yahoo Finance</span>
+      <span><span id="watch-count">9</span> Tickers — Real-Time via Yahoo Finance</span>
       <span style="font-size:10px;color:var(--muted);">Updated: <span id="update-time">—</span> &nbsp;|&nbsp; Auto-refresh every 60s</span>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.06);flex-wrap:wrap;">
+      <input id="add-ticker-input" type="text" maxlength="12" placeholder="Add ticker (e.g. AAPL)"
+             style="background:#0d1117;border:1px solid rgba(255,255,255,.12);color:#e6edf3;padding:6px 10px;border-radius:4px;font-size:12px;font-family:inherit;width:180px;text-transform:uppercase;" />
+      <button id="add-ticker-btn"
+              style="background:rgba(63,185,80,.15);color:var(--green);border:1px solid rgba(63,185,80,.4);padding:6px 14px;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">+ Add</button>
+      <button id="reset-ticker-btn"
+              style="background:rgba(255,255,255,.04);color:var(--muted);border:1px solid rgba(255,255,255,.12);padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit;">Reset to default</button>
+      <span id="add-ticker-msg" style="font-size:11px;color:var(--muted);"></span>
     </div>
     <table>
       <thead>
@@ -326,10 +335,11 @@ tr:hover td{background:#1c2128;transition:.12s;}
           <th>Smart</th>
           <th>Signal</th>
           <th>★</th>
+          <th></th>
         </tr>
       </thead>
       <tbody id="watchlist-body">
-        <tr class="loading-row"><td colspan="12"><span class="spinner"></span>Fetching live prices from Yahoo Finance...</td></tr>
+        <tr class="loading-row"><td colspan="13"><span class="spinner"></span>Fetching live prices from Yahoo Finance...</td></tr>
       </tbody>
     </table>
     <div class="sources-bar">
@@ -338,6 +348,42 @@ tr:hover td{background:#1c2128;transition:.12s;}
       <span class="src-tag">TipRanks</span><span class="src-tag">Seeking Alpha Quant</span>
       <span class="src-tag">TradingView AI</span><span class="src-tag">WallStreetZen</span>
       <span class="src-tag">Benzinga</span><span class="src-tag">CBOE</span>
+    </div>
+  </div>
+</div>
+
+<!-- PRICE FORECAST -->
+<div>
+  <div class="sec-title">Price Forecast — Statistical Projection (GBM)</div>
+  <div class="card">
+    <div class="card-hdr">
+      <span>Geometric Brownian Motion projection from 2yr daily log-returns</span>
+      <span style="font-size:10px;color:var(--muted);">Median price + 50% band (P25–P75)</span>
+    </div>
+    <div style="padding:10px 14px;font-size:11px;color:var(--yellow);background:rgba(210,153,34,.06);border-bottom:1px solid rgba(210,153,34,.15);line-height:1.5;">
+      ⚠️ <strong>Statistical projection, not a prediction.</strong> Assumes future returns mirror the past 2 years. Wider bands = more uncertainty.
+      Long horizons (1y+) are highly speculative. Do not use as the sole basis for trading decisions.
+    </div>
+    <div style="overflow-x:auto;">
+    <table>
+      <thead>
+        <tr>
+          <th>Ticker</th>
+          <th>Now</th>
+          <th>μ ann.</th>
+          <th>σ ann.</th>
+          <th>1 Week</th>
+          <th>1 Month</th>
+          <th>3 Months</th>
+          <th>6 Months</th>
+          <th>1 Year</th>
+          <th>5 Years</th>
+        </tr>
+      </thead>
+      <tbody id="forecast-body">
+        <tr class="loading-row"><td colspan="10"><span class="spinner"></span>Computing forecasts...</td></tr>
+      </tbody>
+    </table>
     </div>
   </div>
 </div>
@@ -487,13 +533,25 @@ const META = {
          thesis:'Highly volatile quantum name — trades on sentiment + news flow. Only enter on confirmed breakouts with stop discipline. ⚠️ Extreme risk.' },
 };
 
-const SYMS   = ['NVDA','TSLA','PLTR','AMD','MU','CRWD','INTC','IONQ','RGTI'];
+const DEFAULT_SYMS = ['NVDA','TSLA','PLTR','AMD','MU','CRWD','INTC','IONQ','RGTI'];
 const MKT    = ['^GSPC','^IXIC','^DJI','^RUT','^VIX','^TNX','DX-Y.NYB','CL=F','GC=F','BTC-USD','ETH-USD',
                 '^N225','^HSI','000001.SS','^GDAXI','^FTSE','^FCHI','SOL-USD'];
-const ALL    = [...SYMS,...MKT];
+const SYM_STORAGE_KEY = 'nandaedge.watchlist.v1';
+function loadSyms(){
+  try {
+    const raw = localStorage.getItem(SYM_STORAGE_KEY);
+    if (!raw) return [...DEFAULT_SYMS];
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr) || arr.length === 0) return [...DEFAULT_SYMS];
+    return arr.filter(s => /^[A-Z0-9.\-]{1,12}$/.test(s));
+  } catch(e) { return [...DEFAULT_SYMS]; }
+}
+function saveSyms(){ try { localStorage.setItem(SYM_STORAGE_KEY, JSON.stringify(SYMS)); } catch(e){} }
+let SYMS = loadSyms();
 
-// Live technicals & sentiment — populated by fetchTech / fetchFG
+// Live technicals, forecast & sentiment — populated by fetchTech / fetchFG / fetchForecast
 let TECH = {};
+let FCST = {};
 let FG   = null;
 
 const sentMap = { bull:{label:'Bullish',cls:'b-bull'}, bear:{label:'Bearish',cls:'b-bear'}, neut:{label:'Neutral',cls:'b-neut'} };
@@ -518,9 +576,12 @@ async function fetchJSON(path, timeoutMs=15000){
   } finally { clearTimeout(timer); }
 }
 
+function symParam(){ return encodeURIComponent([...SYMS, ...MKT].join(',')); }
+function watchSymParam(){ return encodeURIComponent(SYMS.join(',')); }
+
 async function fetchQuotes() {
   try {
-    const data = await fetchJSON('/quotes');
+    const data = await fetchJSON(`/quotes?symbols=${symParam()}`);
     const results = data?.quoteResponse?.result;
     if (!results?.length) throw new Error('Empty response');
     return results;
@@ -539,8 +600,9 @@ async function fetchQuotes() {
   }
 }
 
-async function fetchTech(){ try { TECH = await fetchJSON('/technicals', 30000) || {}; } catch(e){ TECH = {}; } }
-async function fetchFG()  { try { FG   = await fetchJSON('/feargreed', 8000);         } catch(e){ FG = null; } }
+async function fetchTech(){     try { TECH = await fetchJSON(`/technicals?symbols=${watchSymParam()}`, 30000) || {}; } catch(e){ TECH = {}; } }
+async function fetchForecast(){ try { FCST = await fetchJSON(`/forecast?symbols=${watchSymParam()}`,   45000) || {}; } catch(e){ FCST = {}; } }
+async function fetchFG()  {     try { FG   = await fetchJSON('/feargreed', 8000);                                  } catch(e){ FG = null; } }
 
 // ── HELPERS ───────────────────────────────────────────
 const fmtVol = v => !v?'—':v>=1e9?(v/1e9).toFixed(1)+'B':v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?(v/1e3).toFixed(0)+'K':v;
@@ -700,12 +762,20 @@ function updateVixRegime(v){
   else{el.textContent='PANIC';el.className='macro-val dn';sub.textContent='Hedges only — no new longs';}
 }
 
+// ── META fallback for user-added tickers ──────────────
+const DEFAULT_META = { name:'—', sent:'neut', signal:'WATCH', stars:0, risk:'MEDIUM',
+  tip:'—', tipPT:'—', saQuant:'—', saGrades:{V:'—',G:'—',P:'—',M:'—',R:'—'},
+  smartScore:'—', shortInt:'—', ivRank:0, opt:'—',
+  thesis:'User-added ticker — qualitative metadata not available. Live price, technicals, and forecast are still computed.' };
+function metaFor(sym){ return META[sym] || { ...DEFAULT_META, name: sym }; }
+
 // ── WATCHLIST ─────────────────────────────────────────
 function renderWatchlist(map){
   const body = document.getElementById('watchlist-body');
   body.innerHTML = '';
+  document.getElementById('watch-count').textContent = SYMS.length;
   SYMS.forEach(sym=>{
-    const q = map[sym]; const m = META[sym]; const t = TECH[sym];
+    const q = map[sym]; const m = metaFor(sym); const t = TECH[sym];
     const price  = q?.regularMarketPrice;
     const chgPct = q?.regularMarketChangePercent;
     const dayRange = (t?.dayLow!=null && t?.dayHigh!=null)
@@ -737,6 +807,95 @@ function renderWatchlist(map){
         <td><span class="score ${scCls}">${m.smartScore}</span></td>
         <td><span class="sig ${sigCls}">${m.signal}</span></td>
         <td><span class="stars">${stars(m.stars)}</span></td>
+        <td><button class="rm-btn" data-sym="${sym}" title="Remove ${sym}"
+              style="background:transparent;border:1px solid rgba(248,81,73,.3);color:var(--red);width:22px;height:22px;border-radius:4px;cursor:pointer;font-weight:700;font-size:11px;line-height:1;padding:0;">✕</button></td>
+      </tr>`;
+  });
+  body.querySelectorAll('.rm-btn').forEach(b => b.addEventListener('click', () => removeTicker(b.dataset.sym)));
+}
+
+// ── ADD/REMOVE TICKER ─────────────────────────────────
+async function addTickerFromInput(){
+  const input = document.getElementById('add-ticker-input');
+  const msg   = document.getElementById('add-ticker-msg');
+  const raw   = (input.value || '').trim().toUpperCase();
+  msg.style.color = 'var(--muted)';
+  if (!raw) { msg.textContent = 'Enter a ticker symbol'; return; }
+  if (!/^[A-Z0-9.\-]{1,12}$/.test(raw)) { msg.style.color='var(--red)'; msg.textContent='Invalid symbol'; return; }
+  if (SYMS.includes(raw)) { msg.style.color='var(--yellow)'; msg.textContent=`${raw} already in watchlist`; return; }
+  msg.textContent = `Verifying ${raw}…`;
+  try {
+    const res = await fetchJSON(`/quotes?symbols=${encodeURIComponent(raw)}`, 15000);
+    const r = res?.quoteResponse?.result?.[0];
+    if (!r || r.regularMarketPrice == null) { msg.style.color='var(--red)'; msg.textContent=`${raw} not found on Yahoo Finance`; return; }
+    SYMS.push(raw); saveSyms();
+    input.value = '';
+    msg.style.color = 'var(--green)';
+    msg.textContent = `Added ${raw}`;
+    refreshAll();
+  } catch(e) {
+    msg.style.color = 'var(--red)';
+    msg.textContent = `Error verifying ${raw}`;
+  }
+}
+
+function removeTicker(sym){
+  SYMS = SYMS.filter(s => s !== sym);
+  saveSyms();
+  if (SYMS.length === 0) { SYMS = [...DEFAULT_SYMS]; saveSyms(); }
+  refreshAll();
+}
+
+function resetTickers(){
+  if (!confirm('Reset watchlist to default 9 tickers?')) return;
+  SYMS = [...DEFAULT_SYMS]; saveSyms(); refreshAll();
+}
+
+function refreshAll(){ return refresh(); }
+
+// ── FORECAST ──────────────────────────────────────────
+function fcstCellHTML(p0, h){
+  if (!h) return '<td style="color:var(--muted);">—</td>';
+  const pct = h.expReturnPct;
+  const cls = pct > 0 ? 'up' : pct < 0 ? 'dn' : 'nt';
+  return `<td style="font-size:11px;line-height:1.35;">
+    <div style="font-weight:800;">$${h.median.toFixed(2)}</div>
+    <div class="${cls}" style="font-size:10px;font-weight:700;">${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%</div>
+    <div style="color:var(--muted);font-size:9px;">$${h.p25.toFixed(2)} – $${h.p75.toFixed(2)}</div>
+  </td>`;
+}
+
+function renderForecast(map){
+  const body = document.getElementById('forecast-body');
+  body.innerHTML = '';
+  SYMS.forEach(sym => {
+    const f = FCST[sym];
+    const m = metaFor(sym);
+    const q = map?.[sym];
+    const now = q?.regularMarketPrice ?? f?.last;
+    if (!f) {
+      body.innerHTML += `
+        <tr>
+          <td><div class="sym">${sym}</div><div class="co">${m.name}</div></td>
+          <td style="font-weight:800;">${now != null ? '$' + now.toFixed(2) : '—'}</td>
+          <td colspan="8" style="color:var(--muted);font-size:11px;">Forecast unavailable (insufficient history)</td>
+        </tr>`;
+      return;
+    }
+    const byLabel = {};
+    f.horizons.forEach(h => byLabel[h.label] = h);
+    body.innerHTML += `
+      <tr>
+        <td><div class="sym">${sym}</div><div class="co">${m.name}</div></td>
+        <td style="font-weight:800;">$${f.last.toFixed(2)}</td>
+        <td class="${f.muAnnualPct  >= 0 ? 'up' : 'dn'}" style="font-size:11px;font-weight:700;">${f.muAnnualPct >= 0 ? '+' : ''}${f.muAnnualPct.toFixed(1)}%</td>
+        <td class="nt" style="font-size:11px;font-weight:700;">${f.sigAnnualPct.toFixed(1)}%</td>
+        ${fcstCellHTML(f.last, byLabel['1w'])}
+        ${fcstCellHTML(f.last, byLabel['1mo'])}
+        ${fcstCellHTML(f.last, byLabel['3mo'])}
+        ${fcstCellHTML(f.last, byLabel['6mo'])}
+        ${fcstCellHTML(f.last, byLabel['1y'])}
+        ${fcstCellHTML(f.last, byLabel['5y'])}
       </tr>`;
   });
 }
@@ -746,7 +905,7 @@ function renderTradeCards(map){
   const grid = document.getElementById('trade-grid');
   grid.innerHTML = '';
   SYMS.forEach(sym=>{
-    const q = map[sym]; const m = META[sym]; const t = TECH[sym];
+    const q = map[sym]; const m = metaFor(sym); const t = TECH[sym];
     const price  = q?.regularMarketPrice;
     const chgPct = q?.regularMarketChangePercent;
     const priceStr = price!=null?'$'+price.toFixed(2):'—';
@@ -991,13 +1150,20 @@ function updateClock(){
 
 // ── MAIN REFRESH ──────────────────────────────────────
 async function refresh(){
-  const quotes = await fetchQuotes();
+  const [quotes] = await Promise.all([
+    fetchQuotes(),
+    fetchTech(),
+    fetchForecast(),
+    fetchFG(),
+  ]);
   if(!quotes){ return; }
   const map = {};
   quotes.forEach(q=>map[q.symbol]=q);
   renderMarket(map);
+  renderFearGreed();
   renderWatchlist(map);
   renderTradeCards(map);
+  renderForecast(map);
   document.getElementById('update-time').textContent = new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:true});
 }
 
@@ -1009,6 +1175,10 @@ updateClock();
 updateMarketStatus();
 setInterval(updateClock, 1000);
 setInterval(updateMarketStatus, 30000);
+
+document.getElementById('add-ticker-btn').addEventListener('click', addTickerFromInput);
+document.getElementById('add-ticker-input').addEventListener('keydown', e => { if (e.key === 'Enter') addTickerFromInput(); });
+document.getElementById('reset-ticker-btn').addEventListener('click', resetTickers);
 
 refresh();
 setInterval(refresh, 60000);
