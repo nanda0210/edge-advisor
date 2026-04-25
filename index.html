@@ -187,9 +187,40 @@ tr:hover td{background:#1c2128;transition:.12s;}
 
 @media(max-width:1100px){.three-col{grid-template-columns:1fr 1fr;}.macro-grid{grid-template-columns:repeat(2,1fr);}}
 @media(max-width:750px){.three-col,.two-col{grid-template-columns:1fr;}.macro-grid{grid-template-columns:1fr 1fr;}.trade-grid{grid-template-columns:1fr;}}
+/* ── Login overlay ────────────────────────────────── */
+#login-overlay{position:fixed;inset:0;background:rgba(8,12,18,.97);z-index:9999;display:none;align-items:center;justify-content:center;backdrop-filter:blur(8px);}
+#login-overlay.show{display:flex;}
+#login-card{background:#161b22;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:32px 28px;width:340px;max-width:90vw;box-shadow:0 12px 40px rgba(0,0,0,.5);}
+#login-card .lg-title{font-size:18px;font-weight:800;margin-bottom:6px;}
+#login-card .lg-title span{color:var(--accent);}
+#login-card .lg-sub{font-size:12px;color:var(--muted);margin-bottom:20px;}
+#login-card label{display:block;font-size:11px;color:var(--muted);font-weight:700;margin-bottom:6px;letter-spacing:.5px;}
+#login-card input[type=password]{width:100%;background:#0d1117;border:1px solid rgba(255,255,255,.15);border-radius:5px;padding:11px 12px;color:#e6edf3;font-size:14px;font-family:inherit;outline:none;}
+#login-card input[type=password]:focus{border-color:var(--accent);}
+#login-card .lg-row{display:flex;align-items:center;gap:8px;margin-top:14px;font-size:12px;color:var(--muted);}
+#login-card button{width:100%;margin-top:18px;background:var(--accent);border:none;color:#fff;padding:12px;border-radius:5px;font-weight:700;font-size:13px;cursor:pointer;font-family:inherit;}
+#login-card button:disabled{opacity:.5;cursor:default;}
+#login-card .lg-msg{margin-top:14px;font-size:12px;text-align:center;min-height:18px;}
+#login-card .lg-msg.err{color:var(--red);} #login-card .lg-msg.ok{color:var(--green);}
+.app-locked{display:none !important;}
 </style>
 </head>
 <body>
+
+<!-- LOGIN OVERLAY (shown until authenticated) -->
+<div id="login-overlay" role="dialog" aria-modal="true">
+  <div id="login-card">
+    <div class="lg-title">Nanda<span>Edge</span> Advisor</div>
+    <div class="lg-sub">Enter password to access dashboard</div>
+    <label for="login-pw">PASSWORD</label>
+    <input id="login-pw" type="password" autocomplete="current-password" autofocus />
+    <div class="lg-row"><input id="login-remember" type="checkbox" checked /> <label for="login-remember" style="margin:0;">Remember on this device</label></div>
+    <button id="login-btn">Unlock</button>
+    <div id="login-msg" class="lg-msg"></div>
+  </div>
+</div>
+
+<div id="app-root">
 
 <!-- HEADER -->
 <header>
@@ -566,11 +597,33 @@ const API_BASE = (() => {
   return 'https://edge-advisor-api.onrender.com';
 })();
 
-async function fetchJSON(path, timeoutMs=15000){
+// ── AUTH ─────────────────────────────────────────────
+const AUTH_KEY = 'nandaedge.auth.v1';
+function getAuthToken(){
+  return localStorage.getItem(AUTH_KEY) || sessionStorage.getItem(AUTH_KEY) || '';
+}
+function setAuthToken(token, persist){
+  if (persist) localStorage.setItem(AUTH_KEY, token);
+  else         sessionStorage.setItem(AUTH_KEY, token);
+}
+function clearAuthToken(){
+  localStorage.removeItem(AUTH_KEY); sessionStorage.removeItem(AUTH_KEY);
+}
+async function sha256Hex(s){
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+async function fetchJSON(path, timeoutMs=60000){
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const headers = {};
+  const tok = getAuthToken();
+  if (tok) headers['Authorization'] = 'Bearer ' + tok;
   try {
-    const res = await fetch(`${API_BASE}${path}`, { signal: controller.signal });
+    const res = await fetch(`${API_BASE}${path}`, { signal: controller.signal, headers });
+    if (res.status === 401) { clearAuthToken(); showLogin('Session expired — please re-enter password'); throw new Error('unauthorized'); }
+    if (res.status === 429) { showLogin('Too many failed attempts — wait 15 minutes'); throw new Error('rate_limited'); }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } finally { clearTimeout(timer); }
@@ -1167,21 +1220,98 @@ async function refresh(){
   document.getElementById('update-time').textContent = new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:true});
 }
 
-// ── INIT ──────────────────────────────────────────────
-renderOptionsFlow();
-renderAnalystFeed();
-renderNews();
-updateClock();
-updateMarketStatus();
-setInterval(updateClock, 1000);
-setInterval(updateMarketStatus, 30000);
+// ── LOGIN OVERLAY ─────────────────────────────────────
+function showLogin(msgText){
+  document.getElementById('login-overlay').classList.add('show');
+  document.getElementById('app-root').classList.add('app-locked');
+  const m = document.getElementById('login-msg');
+  m.className = 'lg-msg' + (msgText ? ' err' : '');
+  m.textContent = msgText || '';
+  setTimeout(() => document.getElementById('login-pw')?.focus(), 50);
+}
+function hideLogin(){
+  document.getElementById('login-overlay').classList.remove('show');
+  document.getElementById('app-root').classList.remove('app-locked');
+}
 
-document.getElementById('add-ticker-btn').addEventListener('click', addTickerFromInput);
-document.getElementById('add-ticker-input').addEventListener('keydown', e => { if (e.key === 'Enter') addTickerFromInput(); });
-document.getElementById('reset-ticker-btn').addEventListener('click', resetTickers);
+async function tryUnlock(token, persist, source){
+  // Hit /auth on backend with the token in Authorization header
+  const res = await fetch(`${API_BASE}/auth`, { headers: { 'Authorization': 'Bearer ' + token } });
+  const body = await res.json().catch(() => ({}));
+  if (res.ok && body.ok) {
+    setAuthToken(token, !!persist);
+    hideLogin();
+    bootDashboard();
+    return true;
+  }
+  if (res.status === 429 || body.status === 'rate_limited') {
+    showLogin('Too many failed attempts — wait 15 minutes');
+    return false;
+  }
+  if (source === 'stored') clearAuthToken();
+  return false;
+}
 
-refresh();
-setInterval(refresh, 60000);
+async function handleLoginSubmit(){
+  const pw     = document.getElementById('login-pw').value;
+  const persist= document.getElementById('login-remember').checked;
+  const btn    = document.getElementById('login-btn');
+  const msg    = document.getElementById('login-msg');
+  if (!pw) { msg.className='lg-msg err'; msg.textContent='Enter a password'; return; }
+  btn.disabled = true; msg.className='lg-msg'; msg.textContent='Verifying…';
+  try {
+    const token = await sha256Hex(pw);
+    const ok = await tryUnlock(token, persist, 'input');
+    if (!ok) { msg.className='lg-msg err'; msg.textContent='Wrong password'; document.getElementById('login-pw').select(); }
+  } catch(e) {
+    msg.className='lg-msg err'; msg.textContent='Network error — try again';
+  } finally { btn.disabled = false; }
+}
+
+// ── BOOT ──────────────────────────────────────────────
+let _booted = false;
+function bootDashboard(){
+  if (_booted) return; _booted = true;
+  renderOptionsFlow();
+  renderAnalystFeed();
+  renderNews();
+  updateClock();
+  updateMarketStatus();
+  setInterval(updateClock, 1000);
+  setInterval(updateMarketStatus, 30000);
+
+  document.getElementById('add-ticker-btn').addEventListener('click', addTickerFromInput);
+  document.getElementById('add-ticker-input').addEventListener('keydown', e => { if (e.key === 'Enter') addTickerFromInput(); });
+  document.getElementById('reset-ticker-btn').addEventListener('click', resetTickers);
+
+  refresh();
+  setInterval(refresh, 60000);
+}
+
+// Wire the login form
+document.getElementById('login-btn').addEventListener('click', handleLoginSubmit);
+document.getElementById('login-pw').addEventListener('keydown', e => { if (e.key === 'Enter') handleLoginSubmit(); });
+
+// Decide: stored token? validate it. Else: show login.
+(async () => {
+  // Probe backend to see if auth is required
+  let authRequired = true;
+  try {
+    const r = await fetch(`${API_BASE}/health`, { cache: 'no-store' });
+    const j = await r.json();
+    authRequired = !!j.authRequired;
+  } catch(e) { /* keep authRequired=true; user can still try */ }
+
+  if (!authRequired) { hideLogin(); bootDashboard(); return; }
+
+  const stored = getAuthToken();
+  if (stored) {
+    const ok = await tryUnlock(stored, !!localStorage.getItem(AUTH_KEY), 'stored');
+    if (ok) return;
+  }
+  showLogin('');
+})();
 </script>
+</div><!-- /#app-root -->
 </body>
 </html>

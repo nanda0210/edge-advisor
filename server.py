@@ -8,9 +8,45 @@ NandaEdge Data Server — v2.2
   Fear/Greed  → /feargreed                              CNN proxy
   Cloud-ready: reads PORT/HOST from env; binds 0.0.0.0 when PORT is set.
 """
-import os, sys, signal, time, json, math, socket, warnings, urllib.request, threading
+import os, sys, signal, time, json, math, socket, warnings, urllib.request, threading, hashlib
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
+
+# ── Auth (optional: set AUTH_TOKEN_HASH in env to enable) ──
+AUTH_HASH = (os.environ.get("AUTH_TOKEN_HASH", "") or "").strip().lower()
+_AUTH_FAILS = {}            # ip -> [timestamp, ...] within last 15 min
+_AUTH_FAIL_WINDOW = 900     # 15 min
+_AUTH_FAIL_MAX    = 10
+
+def _client_ip(handler):
+    # Render forwards real IP via X-Forwarded-For
+    fwd = handler.headers.get("X-Forwarded-For", "")
+    if fwd: return fwd.split(",")[0].strip()
+    return handler.client_address[0]
+
+def _rate_limited(ip):
+    now = time.time()
+    fails = [t for t in _AUTH_FAILS.get(ip, []) if now - t < _AUTH_FAIL_WINDOW]
+    _AUTH_FAILS[ip] = fails
+    return len(fails) >= _AUTH_FAIL_MAX
+
+def _record_fail(ip):
+    _AUTH_FAILS.setdefault(ip, []).append(time.time())
+
+def _auth_state(handler):
+    """Returns (ok: bool, status: 'open'|'ok'|'unauthorized'|'rate_limited')."""
+    if not AUTH_HASH:
+        return True, "open"
+    ip = _client_ip(handler)
+    if _rate_limited(ip):
+        return False, "rate_limited"
+    h = handler.headers.get("Authorization", "")
+    if h.lower().startswith("bearer "):
+        token = h[7:].strip().lower()
+        if token == AUTH_HASH:
+            return True, "ok"
+    _record_fail(ip)
+    return False, "unauthorized"
 
 warnings.filterwarnings("ignore")
 
@@ -360,14 +396,31 @@ class Handler(BaseHTTPRequestHandler):
         path = parsed.path
         qs   = parse_qs(parsed.query)
 
+        # Public routes (no auth required): "/", "/index.html", "/health"
         if path in ("/", "/index.html"):
             try:
                 body = open(HTML_FILE, "rb").read()
                 self._send(200, "text/html; charset=utf-8", body)
             except FileNotFoundError:
                 self._send(404, "text/plain", b"index.html not found")
+            return
+        if path == "/health":
+            self._send(200, "application/json", json.dumps({"ok": True, "authRequired": bool(AUTH_HASH)}).encode())
+            return
 
-        elif path == "/quotes":
+        # All endpoints below require auth (when AUTH_TOKEN_HASH is set)
+        ok, status = _auth_state(self)
+        if path == "/auth":
+            payload = {"ok": ok, "status": status, "authRequired": bool(AUTH_HASH)}
+            code = 200 if ok else (429 if status == "rate_limited" else 401)
+            self._send(code, "application/json", json.dumps(payload).encode())
+            return
+        if not ok:
+            code = 429 if status == "rate_limited" else 401
+            self._send(code, "application/json", json.dumps({"error": status}).encode())
+            return
+
+        if path == "/quotes":
             syms = parse_symbols(qs, ALL)
             print(f"  [{time.strftime('%H:%M:%S')}] /quotes ({len(syms)}) ...", end=" ", flush=True)
             t0 = time.time()
@@ -410,7 +463,7 @@ class Handler(BaseHTTPRequestHandler):
     def _cors(self):
         self.send_header("Access-Control-Allow-Origin",  "*")
         self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
 # Threaded server so /technicals doesn't block /quotes
 class ThreadedServer(HTTPServer):

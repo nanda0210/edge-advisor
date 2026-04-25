@@ -175,6 +175,37 @@ Caveats — the model assumes returns stay log-normal and stationary. It cannot 
 
 ---
 
+## Authentication (password gate)
+
+Backend gates all data endpoints behind a single password. The password itself is **never** stored or sent — only its SHA-256 hash.
+
+**How it works:**
+1. Set env var `AUTH_TOKEN_HASH` on Render = `SHA-256(password)` (lowercase hex).
+2. Frontend shows a login overlay. User enters password.
+3. Browser computes `SHA-256(password)` via `crypto.subtle` and sends as `Authorization: Bearer <hash>`.
+4. Backend compares to `AUTH_TOKEN_HASH`. Match → 200. Else → 401.
+5. On success, the hash is stored in `localStorage` (if "Remember on this device") or `sessionStorage`. Used as Bearer on every subsequent API call.
+
+**Brute-force protection:** 10 failed attempts per IP per 15 min → 429 (rate-limited).
+
+**Setting / changing the password:**
+```bash
+# Compute hash for a chosen password (replace "MyP@ss"):
+printf 'MyP@ss' | shasum -a 256 | awk '{print $1}'
+```
+Paste the resulting hex into the Render service: **Dashboard → edge-advisor-api → Environment → Add Environment Variable** → `AUTH_TOKEN_HASH=<hex>` → Save (auto-redeploys).
+
+**Endpoints:**
+- `GET /health` — always public; returns `{ok, authRequired}` so frontend knows whether to prompt.
+- `GET /auth` — returns 200 if Bearer token matches, 401 otherwise.
+- All data endpoints — 401 without valid Bearer token.
+
+**Reset / forget device:** clear browser storage, or use a private/incognito window.
+
+**Caveats:** The dashboard HTML is still served publicly from GitHub Pages (it's a static file). Auth gates the *data*, not the *UI shell*. If you need the HTML private too, move hosting off GitHub Pages.
+
+---
+
 ## Watchlist customization
 
 The watchlist is user-editable from the dashboard:
@@ -195,3 +226,4 @@ For tickers not in the static `META` table, the dashboard shows a default neutra
 | 2026-04-21 | README added |
 | 2026-04-25 | Made backend cloud-deployable; deployed to Render + GitHub Pages |
 | 2026-04-25 | Added `/forecast` (GBM) + user-editable watchlist (add/remove tickers) |
+| 2026-04-25 | Added password gate (SHA-256 Bearer-token auth, rate-limited) + 60s API timeout |
