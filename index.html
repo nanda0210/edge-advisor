@@ -185,8 +185,60 @@ tr:hover td{background:#1c2128;transition:.12s;}
 .loading-row td{text-align:center;padding:22px;color:var(--muted);}
 .spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--blue);border-top-color:transparent;border-radius:50%;animation:spin .8s linear infinite;margin-right:7px;vertical-align:middle;}
 
+/* MOBILE CARD VIEW (watchlist + forecast) */
+.m-cards{display:none;padding:8px;gap:8px;flex-direction:column;}
+.m-card{background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:11px 13px;}
+.m-card-row{display:flex;justify-content:space-between;align-items:center;gap:8px;}
+.m-card-row + .m-card-row{margin-top:7px;}
+.m-card-sym{font-size:15px;font-weight:900;color:var(--blue);}
+.m-card-co{font-size:10px;color:var(--muted);font-weight:500;margin-top:1px;}
+.m-card-price{font-size:16px;font-weight:800;text-align:right;}
+.m-card-chip{font-size:11px;padding:3px 9px;border-radius:4px;font-weight:700;}
+.m-card-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:9px;padding-top:9px;border-top:1px solid var(--border);}
+.m-card-cell{font-size:11px;}
+.m-card-cell .lbl{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;font-weight:700;display:block;margin-bottom:2px;}
+.m-card-cell .val{font-weight:700;}
+.m-card-actions{display:flex;justify-content:flex-end;margin-top:9px;}
+.m-card-fc{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:9px;padding-top:9px;border-top:1px solid var(--border);}
+.m-card-fc-cell{background:rgba(255,255,255,.03);border-radius:5px;padding:7px 8px;text-align:center;}
+.m-card-fc-cell .lbl{font-size:9px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:3px;}
+.m-card-fc-cell .price{font-size:12px;font-weight:800;}
+.m-card-fc-cell .ret{font-size:10px;font-weight:700;}
+.m-card-fc-cell .band{font-size:9px;color:var(--muted);margin-top:2px;}
+
+/* RESPONSIVE */
 @media(max-width:1100px){.three-col{grid-template-columns:1fr 1fr;}.macro-grid{grid-template-columns:repeat(2,1fr);}}
-@media(max-width:750px){.three-col,.two-col{grid-template-columns:1fr;}.macro-grid{grid-template-columns:1fr 1fr;}.trade-grid{grid-template-columns:1fr;}}
+@media(max-width:750px){
+  .three-col,.two-col{grid-template-columns:1fr;}
+  .macro-grid{grid-template-columns:1fr 1fr;}
+  .trade-grid{grid-template-columns:1fr;}
+  .main{padding:12px 10px;gap:12px;}
+  /* Header compresses */
+  header{padding:9px 12px;}
+  .logo{font-size:14px;letter-spacing:.5px;}
+  .logo sub{font-size:8px;letter-spacing:1px;}
+  .header-right{gap:10px;}
+  .market-status{font-size:10px;}
+  /* Hide tables, show card list */
+  .desk-table{display:none;}
+  .m-cards{display:flex;}
+  /* Add-ticker row wraps */
+  .ticker-controls{flex-direction:column;align-items:stretch !important;}
+  .ticker-controls input,.ticker-controls button{width:100%;}
+  /* Index bars: smaller items */
+  .idx{padding:6px 10px;min-width:78px;}
+  .idx .val{font-size:11px;}
+  .idx .lbl{font-size:8px;}
+  /* Card padding */
+  .card-hdr{padding:9px 12px;font-size:12px;flex-wrap:wrap;gap:4px;}
+  /* Tap targets */
+  button,.rm-btn{min-height:36px;}
+  #add-ticker-btn,#reset-ticker-btn{min-height:40px;}
+}
+@media(max-width:480px){
+  .macro-grid{grid-template-columns:1fr;}
+  .logo sub{display:none;}
+}
 /* ── Login overlay ────────────────────────────────── */
 #login-overlay{position:fixed;inset:0;background:rgba(8,12,18,.97);z-index:9999;display:none;align-items:center;justify-content:center;backdrop-filter:blur(8px);}
 #login-overlay.show{display:flex;}
@@ -342,15 +394,16 @@ tr:hover td{background:#1c2128;transition:.12s;}
       <span><span id="watch-count">9</span> Tickers — Real-Time via Yahoo Finance</span>
       <span style="font-size:10px;color:var(--muted);">Updated: <span id="update-time">—</span> &nbsp;|&nbsp; Auto-refresh every 60s</span>
     </div>
-    <div style="display:flex;gap:8px;align-items:center;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.06);flex-wrap:wrap;">
+    <div class="ticker-controls" style="display:flex;gap:8px;align-items:center;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.06);flex-wrap:wrap;">
       <input id="add-ticker-input" type="text" maxlength="12" placeholder="Add ticker (e.g. AAPL)"
-             style="background:#0d1117;border:1px solid rgba(255,255,255,.12);color:#e6edf3;padding:6px 10px;border-radius:4px;font-size:12px;font-family:inherit;width:180px;text-transform:uppercase;" />
+             style="background:#0d1117;border:1px solid rgba(255,255,255,.12);color:#e6edf3;padding:8px 10px;border-radius:4px;font-size:13px;font-family:inherit;width:180px;text-transform:uppercase;" />
       <button id="add-ticker-btn"
-              style="background:rgba(63,185,80,.15);color:var(--green);border:1px solid rgba(63,185,80,.4);padding:6px 14px;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">+ Add</button>
+              style="background:rgba(63,185,80,.15);color:var(--green);border:1px solid rgba(63,185,80,.4);padding:8px 14px;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">+ Add</button>
       <button id="reset-ticker-btn"
-              style="background:rgba(255,255,255,.04);color:var(--muted);border:1px solid rgba(255,255,255,.12);padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit;">Reset to default</button>
+              style="background:rgba(255,255,255,.04);color:var(--muted);border:1px solid rgba(255,255,255,.12);padding:8px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit;">Reset to default</button>
       <span id="add-ticker-msg" style="font-size:11px;color:var(--muted);"></span>
     </div>
+    <div class="desk-table">
     <table>
       <thead>
         <tr>
@@ -373,6 +426,8 @@ tr:hover td{background:#1c2128;transition:.12s;}
         <tr class="loading-row"><td colspan="13"><span class="spinner"></span>Fetching live prices from Yahoo Finance...</td></tr>
       </tbody>
     </table>
+    </div>
+    <div class="m-cards" id="watchlist-mcards"></div>
     <div class="sources-bar">
       <span style="font-size:9px;color:var(--muted);font-weight:700;margin-right:4px;">DATA:</span>
       <span class="src-tag">Alpha Vantage MCP</span><span class="src-tag">Yahoo Finance</span>
@@ -395,7 +450,7 @@ tr:hover td{background:#1c2128;transition:.12s;}
       ⚠️ <strong>Statistical projection, not a prediction.</strong> Assumes future returns mirror the past 2 years. Wider bands = more uncertainty.
       Long horizons (1y+) are highly speculative. Do not use as the sole basis for trading decisions.
     </div>
-    <div style="overflow-x:auto;">
+    <div class="desk-table" style="overflow-x:auto;">
     <table>
       <thead>
         <tr>
@@ -416,6 +471,7 @@ tr:hover td{background:#1c2128;transition:.12s;}
       </tbody>
     </table>
     </div>
+    <div class="m-cards" id="forecast-mcards"></div>
   </div>
 </div>
 
@@ -865,6 +921,51 @@ function renderWatchlist(map){
       </tr>`;
   });
   body.querySelectorAll('.rm-btn').forEach(b => b.addEventListener('click', () => removeTicker(b.dataset.sym)));
+  renderWatchlistMobile(map);
+}
+
+function renderWatchlistMobile(map){
+  const wrap = document.getElementById('watchlist-mcards');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  SYMS.forEach(sym => {
+    const q = map[sym]; const m = metaFor(sym); const t = TECH[sym];
+    const price  = q?.regularMarketPrice;
+    const chgPct = q?.regularMarketChangePercent;
+    const chgC   = cls(chgPct);
+    const rsi = t?.rsi14;
+    const rsiCls = rsi==null?'':rsi>70?'dn':rsi<30?'up':'nt';
+    const trendVal = t?.trend ? trendLabel[t.trend] : '—';
+    const trendC   = t?.trend ? trendCls[t.trend]   : '';
+    const sigCls = sigMap[m.signal]||'s-watch';
+    const vr = t?.volRatio;
+    const vrCls = vr==null ? '' : vr>=1.5 ? 'up' : vr<0.6 ? 'dn' : 'nt';
+    wrap.innerHTML += `
+      <div class="m-card">
+        <div class="m-card-row">
+          <div>
+            <div class="m-card-sym">${sym}</div>
+            <div class="m-card-co">${m.name}</div>
+          </div>
+          <div style="text-align:right;">
+            <div class="m-card-price">${price!=null?'$'+price.toFixed(2):'—'}</div>
+            <div class="m-card-chip ${chgC}" style="background:rgba(255,255,255,.04);">${pct(chgPct)}</div>
+          </div>
+        </div>
+        <div class="m-card-grid">
+          <div class="m-card-cell"><span class="lbl">RSI</span><span class="val ${rsiCls}">${rsi!=null?rsi.toFixed(1):'—'}</span></div>
+          <div class="m-card-cell"><span class="lbl">Trend</span><span class="val ${trendC}">${trendVal}</span></div>
+          <div class="m-card-cell"><span class="lbl">Vol×</span><span class="val ${vrCls}">${vr!=null?vr.toFixed(1)+'×':'—'}</span></div>
+          <div class="m-card-cell"><span class="lbl">Signal</span><span class="sig ${sigCls}" style="font-size:9px;">${m.signal}</span></div>
+          <div class="m-card-cell"><span class="lbl">Smart</span><span class="val">${m.smartScore}</span></div>
+          <div class="m-card-cell"><span class="lbl">Stars</span><span class="stars">${stars(m.stars)}</span></div>
+        </div>
+        <div class="m-card-actions">
+          <button class="rm-btn" data-sym="${sym}" style="background:transparent;border:1px solid rgba(248,81,73,.3);color:var(--red);padding:6px 14px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;">✕ Remove</button>
+        </div>
+      </div>`;
+  });
+  wrap.querySelectorAll('.rm-btn').forEach(b => b.addEventListener('click', () => removeTicker(b.dataset.sym)));
 }
 
 // ── ADD/REMOVE TICKER ─────────────────────────────────
@@ -950,6 +1051,57 @@ function renderForecast(map){
         ${fcstCellHTML(f.last, byLabel['1y'])}
         ${fcstCellHTML(f.last, byLabel['5y'])}
       </tr>`;
+  });
+  renderForecastMobile(map);
+}
+
+function renderForecastMobile(map){
+  const wrap = document.getElementById('forecast-mcards');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  SYMS.forEach(sym => {
+    const f = FCST[sym]; const m = metaFor(sym); const q = map?.[sym];
+    const now = q?.regularMarketPrice ?? f?.last;
+    if (!f) {
+      wrap.innerHTML += `
+        <div class="m-card">
+          <div class="m-card-row">
+            <div><div class="m-card-sym">${sym}</div><div class="m-card-co">${m.name}</div></div>
+            <div class="m-card-price">${now!=null?'$'+now.toFixed(2):'—'}</div>
+          </div>
+          <div style="margin-top:8px;font-size:11px;color:var(--muted);">Forecast unavailable (insufficient history)</div>
+        </div>`;
+      return;
+    }
+    const byLabel = {}; f.horizons.forEach(h => byLabel[h.label] = h);
+    const cell = (label, key) => {
+      const h = byLabel[key]; if (!h) return '';
+      const c = h.expReturnPct > 0 ? 'up' : h.expReturnPct < 0 ? 'dn' : 'nt';
+      return `<div class="m-card-fc-cell">
+        <span class="lbl">${label}</span>
+        <span class="price">$${h.median.toFixed(2)}</span>
+        <span class="ret ${c}">${h.expReturnPct >= 0 ? '+' : ''}${h.expReturnPct.toFixed(1)}%</span>
+        <div class="band">$${h.p25.toFixed(2)}–$${h.p75.toFixed(2)}</div>
+      </div>`;
+    };
+    wrap.innerHTML += `
+      <div class="m-card">
+        <div class="m-card-row">
+          <div><div class="m-card-sym">${sym}</div><div class="m-card-co">${m.name}</div></div>
+          <div style="text-align:right;">
+            <div class="m-card-price">$${f.last.toFixed(2)}</div>
+            <div style="font-size:10px;color:var(--muted);">μ ${f.muAnnualPct >= 0 ? '+' : ''}${f.muAnnualPct.toFixed(1)}% &middot; σ ${f.sigAnnualPct.toFixed(1)}%</div>
+          </div>
+        </div>
+        <div class="m-card-fc">
+          ${cell('1W',  '1w')}
+          ${cell('1M',  '1mo')}
+          ${cell('3M',  '3mo')}
+          ${cell('6M',  '6mo')}
+          ${cell('1Y',  '1y')}
+          ${cell('5Y',  '5y')}
+        </div>
+      </div>`;
   });
 }
 
