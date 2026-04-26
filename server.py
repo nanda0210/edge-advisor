@@ -67,11 +67,13 @@ ALL = WATCH + MARKETS
 _tech_cache  = {}                     # sym -> {"t": float, "data": dict}
 _fcst_cache  = {}                     # sym -> {"t": float, "data": dict}
 _opts_cache  = {}                     # (sym, type) -> {"t": float, "data": list}
+_hist_cache  = {}                     # (sym, days) -> {"t": float, "data": list}
 _rate_cache  = {"t": 0, "rate": 0.045}  # risk-free rate from ^TNX
 _fg_cache    = {"t": 0, "data": None}
 TECH_TTL = 300                        # 5 min
 FCST_TTL = 3600                       # 1 hour — forecasts don't need to update often
 OPTS_TTL = 600                        # 10 min — options chains move fast but pulling is expensive
+HIST_TTL = 1800                       # 30 min — daily closes don't change intraday
 RATE_TTL = 3600                       # 1 hour for risk-free rate
 FG_TTL   = 600                        # 10 min
 
@@ -537,6 +539,40 @@ def fetch_options(sym, opt_type, dte_min, dte_max, delta_min, delta_max, top_n=5
     _opts_cache[cache_key] = {"t": now, "data": out}
     return out
 
+# ── History (daily closes for sparklines) ──────────────
+def fetch_history(syms, days=90):
+    """Returns {sym: [close_0, close_1, ...]} for the last N trading days."""
+    syms = syms or WATCH
+    days = max(20, min(days, 365))
+    now = time.time()
+
+    out = {}
+    fresh = []
+    for sym in syms:
+        c = _hist_cache.get((sym, days))
+        if c and (now - c["t"] < HIST_TTL):
+            out[sym] = c["data"]
+        else:
+            fresh.append(sym)
+
+    if fresh:
+        import yfinance as yf
+        import pandas as pd
+        # Fetch enough trading days; use period in days × 1.6 to allow for weekends/holidays
+        period_days = max(int(days * 1.6), 60)
+        df = yf.download(" ".join(fresh), period=f"{period_days}d", interval="1d",
+                         group_by="ticker", threads=True, progress=False, auto_adjust=True)
+        for sym in fresh:
+            try:
+                d = (df[sym].dropna() if isinstance(df.columns, pd.MultiIndex) else df.dropna())
+                closes = [round(float(x), 2) for x in d["Close"].tail(days).tolist()]
+                out[sym] = closes
+                _hist_cache[(sym, days)] = {"t": now, "data": closes}
+            except Exception as e:
+                print(f"  WARN history {sym}: {e}", flush=True)
+                out[sym] = []
+    return out
+
 # ── CNN Fear & Greed ───────────────────────────────────
 def fetch_fg():
     now = time.time()
@@ -621,6 +657,18 @@ class Handler(BaseHTTPRequestHandler):
             t0 = time.time()
             data = fetch_forecast(syms)
             print(f"{sum(1 for v in data.values() if v)} ok in {time.time()-t0:.1f}s", flush=True)
+            self._send(200, "application/json", json.dumps(data).encode())
+
+        elif path == "/history":
+            syms = parse_symbols(qs, WATCH)
+            try:
+                days = int(qs.get("days", ["90"])[0])
+            except ValueError:
+                days = 90
+            print(f"  [{time.strftime('%H:%M:%S')}] /history ({len(syms)},{days}d) ...", end=" ", flush=True)
+            t0 = time.time()
+            data = fetch_history(syms, days)
+            print(f"ok in {time.time()-t0:.1f}s", flush=True)
             self._send(200, "application/json", json.dumps(data).encode())
 
         elif path == "/options":

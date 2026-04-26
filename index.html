@@ -185,6 +185,27 @@ tr:hover td{background:#1c2128;transition:.12s;}
 .loading-row td{text-align:center;padding:22px;color:var(--muted);}
 .spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--blue);border-top-color:transparent;border-radius:50%;animation:spin .8s linear infinite;margin-right:7px;vertical-align:middle;}
 
+/* TOP SETUPS */
+.setups-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;padding:14px;}
+.setup-card{background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;}
+.setup-rank{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);}
+.setup-sym{font-size:18px;font-weight:900;color:var(--blue);margin-top:2px;}
+.setup-co{font-size:10px;color:var(--muted);margin-top:1px;margin-bottom:9px;}
+.setup-row{display:flex;justify-content:space-between;font-size:11px;padding:3px 0;}
+.setup-row .lbl{color:var(--muted);}
+.setup-row .val{font-weight:700;}
+.setup-why{font-size:11px;color:var(--muted);margin-top:8px;padding-top:8px;border-top:1px solid var(--border);line-height:1.4;}
+.setup-empty{padding:20px;text-align:center;color:var(--muted);font-size:12px;}
+.setup-score{display:inline-block;font-size:9px;font-weight:800;padding:2px 7px;border-radius:3px;background:rgba(63,185,80,.18);color:var(--green);border:1px solid rgba(63,185,80,.35);margin-left:6px;}
+@media(max-width:1100px){.setups-grid{grid-template-columns:repeat(2,1fr);}}
+@media(max-width:750px){.setups-grid{grid-template-columns:1fr;padding:10px;gap:10px;}}
+
+/* SPARKLINE */
+.spark{display:inline-block;vertical-align:middle;}
+.spark-band{fill:rgba(88,166,255,.12);}
+.spark-line{fill:none;stroke:var(--blue);stroke-width:1.6;stroke-linejoin:round;stroke-linecap:round;}
+.spark-now{fill:var(--green);}
+
 /* OPTIONS CANDIDATES */
 .opt-section{border-top:1px solid var(--border);padding:14px 16px;}
 .opt-section:first-child{border-top:none;}
@@ -399,6 +420,20 @@ tr:hover td{background:#1c2128;transition:.12s;}
         <div class="vix-row" style="flex-direction:column;background:rgba(248,81,73,.08);border-radius:5px;padding:6px 8px;"><div class="vix-range dn">28–35</div><div class="vix-regime">High Fear — Dip buy</div></div>
         <div class="vix-row" style="flex-direction:column;background:rgba(248,81,73,.15);border-radius:5px;padding:6px 8px;"><div class="vix-range dn">&gt;35</div><div class="vix-regime">Panic — Hedges only</div></div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- TODAY'S TOP SETUPS -->
+<div>
+  <div class="sec-title">Today's Top Setups — Best 3 Across Watchlist</div>
+  <div class="card">
+    <div class="card-hdr">
+      <span>Auto-ranked by trend, regime fit, RSI, forecast position, and CSP availability</span>
+      <span style="font-size:10px;color:var(--muted);">Updates with each refresh</span>
+    </div>
+    <div id="setups-grid" class="setups-grid">
+      <div class="setup-empty">Loading setups…</div>
     </div>
   </div>
 </div>
@@ -744,6 +779,10 @@ async function fetchQuotes() {
 async function fetchTech(){     try { TECH = await fetchJSON(`/technicals?symbols=${watchSymParam()}`, 30000) || {}; } catch(e){ TECH = {}; } }
 async function fetchForecast(){ try { FCST = await fetchJSON(`/forecast?symbols=${watchSymParam()}`,   45000) || {}; } catch(e){ FCST = {}; } }
 async function fetchFG()  {     try { FG   = await fetchJSON('/feargreed', 8000);                                  } catch(e){ FG = null; } }
+let HIST = {};
+let OPTS = {};   // sym -> { puts: data, calls: data }
+async function fetchHistory(){ try { HIST = await fetchJSON(`/history?symbols=${watchSymParam()}&days=90`, 30000) || {}; } catch(e){ HIST = {}; } }
+
 async function fetchOptionChain(sym, type){
   try {
     return await fetchJSON(`/options?symbol=${encodeURIComponent(sym)}&type=${type}&top=3`, 60000);
@@ -1046,6 +1085,106 @@ function resetTickers(){
 
 function refreshAll(){ return refresh(); }
 
+// ── SPARKLINE (inline SVG) ────────────────────────────
+function sparklineSVG(closes, p25, p75, w=120, h=32){
+  if (!closes || closes.length < 2) return '';
+  const n = closes.length;
+  // Y range includes the band so it's visible
+  const minY = Math.min(...closes, p25 != null ? p25 : Infinity);
+  const maxY = Math.max(...closes, p75 != null ? p75 : -Infinity);
+  if (!isFinite(minY) || !isFinite(maxY) || maxY === minY) return '';
+  const x = i => (i / (n - 1)) * (w - 2) + 1;
+  const y = v => h - 1 - ((v - minY) / (maxY - minY)) * (h - 2);
+  const linePts = closes.map((c, i) => `${x(i).toFixed(1)},${y(c).toFixed(1)}`).join(' ');
+  const lastX = x(n - 1), lastY = y(closes[n - 1]);
+  let bandRect = '';
+  if (p25 != null && p75 != null) {
+    const yT = y(p75), yB = y(p25);
+    bandRect = `<rect x="0" y="${Math.min(yT, yB).toFixed(1)}" width="${w}" height="${Math.abs(yB - yT).toFixed(1)}" class="spark-band"/>`;
+  }
+  return `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true">
+    ${bandRect}
+    <polyline class="spark-line" points="${linePts}"/>
+    <circle class="spark-now" cx="${lastX.toFixed(1)}" cy="${lastY.toFixed(1)}" r="2"/>
+  </svg>`;
+}
+
+// ── TOP SETUPS scoring ────────────────────────────────
+function scoreTicker(sym, q, t, f, opts){
+  if (!t || !q) return null;
+  let score = 0;
+  const reasons = [];
+  // Trend (max 3)
+  if (t.trend === 'strong_up') { score += 3; reasons.push('strong uptrend'); }
+  else if (t.trend === 'up')    { score += 2; reasons.push('uptrend'); }
+  else if (t.trend === 'range') { score += 1; }
+  // RSI (max 2) — favor 35–55 (not overbought, not falling knife)
+  const rsi = t.rsi14;
+  if (rsi != null) {
+    if (rsi >= 35 && rsi <= 55) { score += 2; reasons.push(`RSI ${rsi.toFixed(0)} healthy`); }
+    else if (rsi >= 30 && rsi < 35) { score += 1; reasons.push(`RSI ${rsi.toFixed(0)} oversold-to-bounce`); }
+  }
+  // MACD (max 2)
+  if (t.macdCross === 'bull_cross') { score += 2; reasons.push('MACD bull cross'); }
+  else if (t.macdCross === 'bull')  { score += 1; }
+  // Forecast: 1Y median above current = positive expected return (max 2)
+  const oneY = f?.horizons?.find(h => h.label === '1y');
+  if (oneY && q.regularMarketPrice && oneY.median > q.regularMarketPrice) {
+    score += 2; reasons.push(`1Y forecast +${oneY.expReturnPct.toFixed(0)}%`);
+  }
+  // Price near 20d support (max 2): within 5% above support
+  if (t.support1 && q.regularMarketPrice) {
+    const distPct = (q.regularMarketPrice - t.support1) / t.support1 * 100;
+    if (distPct >= 0 && distPct <= 5) { score += 2; reasons.push('near 20d support'); }
+  }
+  // CSP candidate available with ≥12% annualized & passes liquidity (max 3)
+  const puts = opts?.puts?.candidates || [];
+  const bestCSP = puts.find(c => c.liqOK && (c.annualizedReturnPct || 0) >= 12);
+  if (bestCSP) { score += 3; reasons.push(`CSP ${bestCSP.annualizedReturnPct.toFixed(0)}% ann`); }
+  return { sym, score, reasons, bestCSP, oneY };
+}
+
+function renderTopSetups(map){
+  const grid = document.getElementById('setups-grid');
+  const scores = SYMS.map(sym => scoreTicker(sym, map[sym], TECH[sym], FCST[sym], OPTS[sym]))
+                     .filter(x => x);
+  scores.sort((a, b) => b.score - a.score);
+  const top = scores.slice(0, 3);
+  if (top.length === 0 || top[0].score === 0) {
+    grid.innerHTML = `<div class="setup-empty" style="grid-column:1/-1;">
+      Not enough signal yet — refresh after market open or scan options to enable CSP scoring.
+    </div>`;
+    return;
+  }
+  const ranks = ['🥇 Best Setup', '🥈 Runner-Up', '🥉 Honorable Mention'];
+  grid.innerHTML = top.map((s, i) => {
+    const m = metaFor(s.sym);
+    const q = map[s.sym]; const t = TECH[s.sym]; const f = FCST[s.sym];
+    const price = q?.regularMarketPrice;
+    const oneY = s.oneY;
+    const csp = s.bestCSP;
+    const closes = HIST[s.sym] || [];
+    const spark = sparklineSVG(closes, oneY?.p25, oneY?.p75, 220, 50);
+    const cspRow = csp ? `
+      <div class="setup-row"><span class="lbl">Top CSP</span><span class="val">$${csp.strike} ${csp.expiry.slice(5)} (${csp.dte}d)</span></div>
+      <div class="setup-row"><span class="lbl">Premium / Δ</span><span class="val">$${csp.mid.toFixed(2)} / ${csp.delta.toFixed(2)}</span></div>
+      <div class="setup-row"><span class="lbl">Annualized</span><span class="val up">${csp.annualizedReturnPct.toFixed(1)}%</span></div>` : `
+      <div class="setup-row"><span class="lbl">CSP</span><span class="val" style="color:var(--muted);">scan options to populate</span></div>`;
+    return `
+      <div class="setup-card">
+        <div class="setup-rank">${ranks[i]}<span class="setup-score">score ${s.score}</span></div>
+        <div class="setup-sym">${s.sym}</div>
+        <div class="setup-co">${m.name}</div>
+        <div style="margin:6px 0 8px;">${spark}</div>
+        <div class="setup-row"><span class="lbl">Price</span><span class="val">$${price?.toFixed(2) ?? '—'}</span></div>
+        <div class="setup-row"><span class="lbl">Trend / RSI</span><span class="val">${t?.trend ? trendLabel[t.trend] : '—'} · ${t?.rsi14?.toFixed(0) ?? '—'}</span></div>
+        <div class="setup-row"><span class="lbl">1Y forecast</span><span class="val ${oneY && oneY.expReturnPct >= 0 ? 'up' : 'dn'}">${oneY ? (oneY.expReturnPct >= 0 ? '+' : '') + oneY.expReturnPct.toFixed(1) + '%' : '—'}</span></div>
+        ${cspRow}
+        <div class="setup-why">${s.reasons.join(' · ')}</div>
+      </div>`;
+  }).join('');
+}
+
 // ── OPTIONS CANDIDATES ────────────────────────────────
 async function scanOptions(){
   const body = document.getElementById('options-body');
@@ -1062,13 +1201,21 @@ async function scanOptions(){
       fetchOptionChain(sym, 'calls').then(d => ({sym, type: 'calls', data: d})),
     ]);
     const results = await Promise.all(tasks);
+    // Cache for Top Setups scoring
+    OPTS = {};
+    results.forEach(r => { OPTS[r.sym] = OPTS[r.sym] || {}; OPTS[r.sym][r.type] = r.data; });
     renderOptions(results);
+    // Re-render Top Setups with options data now available
+    const map = {}; (lastQuotes || []).forEach(q => map[q.symbol] = q);
+    renderTopSetups(map);
   } catch(e) {
     body.innerHTML = `<div class="opt-err">Error: ${e.message || e}</div>`;
   } finally {
     btn.disabled = false; btn.textContent = btnTxt;
   }
 }
+
+let lastQuotes = [];
 
 function renderOptionsTable(d){
   if (!d) return '<div class="opt-empty">no data</div>';
@@ -1162,9 +1309,12 @@ function renderForecast(map){
     }
     const byLabel = {};
     f.horizons.forEach(h => byLabel[h.label] = h);
+    const oneY = byLabel['1y'];
+    const closes = HIST[sym] || [];
+    const sparkHTML = sparklineSVG(closes, oneY?.p25, oneY?.p75, 100, 28);
     body.innerHTML += `
       <tr>
-        <td><div class="sym">${sym}</div><div class="co">${m.name}</div></td>
+        <td><div class="sym">${sym}</div><div class="co">${m.name}</div>${sparkHTML ? '<div style="margin-top:4px;">' + sparkHTML + '</div>' : ''}</td>
         <td style="font-weight:800;">$${f.last.toFixed(2)}</td>
         <td class="${f.muAnnualPct  >= 0 ? 'up' : 'dn'}" style="font-size:11px;font-weight:700;">${f.muAnnualPct >= 0 ? '+' : ''}${f.muAnnualPct.toFixed(1)}%</td>
         <td class="nt" style="font-size:11px;font-weight:700;">${f.sigAnnualPct.toFixed(1)}%</td>
@@ -1208,6 +1358,9 @@ function renderForecastMobile(map){
         <div class="band">$${h.p25.toFixed(2)}–$${h.p75.toFixed(2)}</div>
       </div>`;
     };
+    const oneY_m = byLabel['1y'];
+    const closes_m = HIST[sym] || [];
+    const sparkHTML_m = sparklineSVG(closes_m, oneY_m?.p25, oneY_m?.p75, 280, 40);
     wrap.innerHTML += `
       <div class="m-card">
         <div class="m-card-row">
@@ -1217,6 +1370,7 @@ function renderForecastMobile(map){
             <div style="font-size:10px;color:var(--muted);">μ ${f.muAnnualPct >= 0 ? '+' : ''}${f.muAnnualPct.toFixed(1)}% &middot; σ ${f.sigAnnualPct.toFixed(1)}%</div>
           </div>
         </div>
+        ${sparkHTML_m ? '<div style="margin-top:8px;text-align:center;">' + sparkHTML_m + '</div>' : ''}
         <div class="m-card-fc">
           ${cell('1W',  '1w')}
           ${cell('1M',  '1mo')}
@@ -1483,13 +1637,16 @@ async function refresh(){
     fetchQuotes(),
     fetchTech(),
     fetchForecast(),
+    fetchHistory(),
     fetchFG(),
   ]);
   if(!quotes){ return; }
+  lastQuotes = quotes;
   const map = {};
   quotes.forEach(q=>map[q.symbol]=q);
   renderMarket(map);
   renderFearGreed();
+  renderTopSetups(map);
   renderWatchlist(map);
   renderTradeCards(map);
   renderForecast(map);
