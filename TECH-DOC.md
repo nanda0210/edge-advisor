@@ -14,6 +14,7 @@ API endpoints (all accept `?symbols=NVDA,TSLA,...`):
 - `GET /forecast` — GBM price projections for 1w / 1mo / 3mo / 6mo / 1y / 5y (cached 1 hr, per symbol)
 - `GET /options?symbol=NVDA&type=puts|calls` — live options chain candidates with Black-Scholes delta, IV, OI, mid, BE, annualized return (cached 10 min)
 - `GET /history?symbols=...&days=90` — daily closes for sparklines (cached 30 min)
+- `GET /earnings?symbols=...` — next earnings date + DTE per ticker (cached 24 hr)
 - `GET /feargreed` — CNN Fear & Greed (cached 10 min)
 
 ---
@@ -232,3 +233,4 @@ For tickers not in the static `META` table, the dashboard shows a default neutra
 | 2026-04-25 | Added mobile card layout for watchlist & forecast (<750px) |
 | 2026-04-25 | Added `/options` endpoint (Black-Scholes delta, OI/spread liquidity gates) + Options Candidates UI section |
 | 2026-04-25 | Added `/history` endpoint, SVG sparklines on forecast cards, and Today's Top Setups auto-ranked section |
+| 2026-04-25 | Added `/earnings` endpoint, sector ETF bar (curated: XLK/SMH/SOXX/IGV/WCLD/SKYY/DRIV/XLC/XLY), and earnings-aware Top Setups scoring |

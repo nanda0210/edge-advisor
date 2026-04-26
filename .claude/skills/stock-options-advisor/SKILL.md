@@ -79,6 +79,8 @@ The user runs a dashboard backend at `https://edge-advisor-api.onrender.com`. **
 | Technicals (RSI, MACD, EMA, BB, ATR, VWAP, S/R, trend) | `GET /technicals?symbols=...` | Cached 5 min |
 | Forecast (GBM bands, μ, σ, P25/P75, 1w–5y) | `GET /forecast?symbols=...` | Cached 1 hr |
 | **Options chain (CSP / CC candidates with delta, IV, OI, BE, ann. return)** | **`GET /options?symbol=NVDA&type=puts\|calls&dte_min=&dte_max=&delta_min=&delta_max=&top=5`** | **Cached 10 min** |
+| **Earnings calendar** | **`GET /earnings?symbols=NVDA,AAPL,...`** | **Cached 24 hr; returns `{nextDate, dte, source}` per ticker** |
+| **Sector ETFs (curated for IT/semi/cloud/auto focus)** | included in `/quotes` — `XLK,SMH,SOXX,IGV,WCLD,SKYY,DRIV,XLC,XLY` | Use these for "sector trend" |
 | Fear & Greed | `GET /feargreed` | CNN proxy |
 | Health / auth | `GET /health`, `GET /auth` | Public / auth check |
 
@@ -90,9 +92,21 @@ The user runs a dashboard backend at `https://edge-advisor-api.onrender.com`. **
 - Candidates ranked: liquidity-passing first, then by annualized return desc.
 
 **What this skill cannot fetch — ask the user to paste:**
-- Earnings dates beyond yfinance's basic field
 - Real-time analyst consensus beyond what `META` shows in `index.html`
-- Sector ETF prices not in the default symbol list (XLK, XLE, XLF, etc.) — request via `/quotes`
+- Earnings *time of day* and confirmed-vs-estimated status (yfinance gives the date but not always the AM/PM or confirmation)
+
+**Earnings handling (per user's hard rule "no earnings inside option's DTE"):**
+- Always call `/earnings` and check `dte` for each ticker before recommending CSPs/CCs.
+- If `dte ≤ DTE_window_max` for the proposed option → **No trade** with explicit "earnings inside DTE" reason.
+- For wheel-eligible tickers near earnings: recommend waiting until ~2 days post-earnings before re-engaging (let IV crush settle).
+
+**Sector context (per user preference — IT, semis, cloud, automobile):**
+- Pull `XLK,SMH,SOXX,IGV,WCLD,SKYY,DRIV,XLC,XLY` via `/quotes` for sector trend.
+- Map ticker → relevant sector ETFs:
+  - Semis (NVDA, AMD, MU, INTC, IONQ, RGTI) → SMH, SOXX, XLK
+  - Software/IT (PLTR, CRWD) → IGV, XLK, WCLD
+  - EV/Auto (TSLA) → DRIV, XLY
+- "Sector trend" in regime check = trend of the most-relevant sector ETF for the ticker under analysis.
 
 **Rule:** never fabricate. If unverifiable, mark with `⚠ unverified` and ask.
 

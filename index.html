@@ -360,6 +360,20 @@ tr:hover td{background:#1c2128;transition:.12s;}
   <div class="idx"><div class="lbl">SOL</div><div class="val" id="sol">—</div></div>
 </div>
 
+<!-- SECTOR BAR (curated: tech / semis / cloud / EV) -->
+<div class="index-bar asia-bar" style="background:#0a1318;">
+  <div class="bar-label">SECTORS</div>
+  <div class="idx"><div class="lbl">Tech (XLK)</div><div class="val" id="xlk">—</div></div>
+  <div class="idx"><div class="lbl">Semis (SMH)</div><div class="val" id="smh">—</div></div>
+  <div class="idx"><div class="lbl">Semis (SOXX)</div><div class="val" id="soxx">—</div></div>
+  <div class="idx"><div class="lbl">Software (IGV)</div><div class="val" id="igv">—</div></div>
+  <div class="idx"><div class="lbl">Cloud (WCLD)</div><div class="val" id="wcld">—</div></div>
+  <div class="idx"><div class="lbl">Cloud (SKYY)</div><div class="val" id="skyy">—</div></div>
+  <div class="idx"><div class="lbl">EV/Auto (DRIV)</div><div class="val" id="driv">—</div></div>
+  <div class="idx"><div class="lbl">Comms (XLC)</div><div class="val" id="xlc">—</div></div>
+  <div class="idx"><div class="lbl">Cons Disc (XLY)</div><div class="val" id="xly">—</div></div>
+</div>
+
 <div class="main">
 
 <!-- MACRO REGIME -->
@@ -689,7 +703,8 @@ const META = {
 
 const DEFAULT_SYMS = ['NVDA','TSLA','PLTR','AMD','MU','CRWD','INTC','IONQ','RGTI'];
 const MKT    = ['^GSPC','^IXIC','^DJI','^RUT','^VIX','^TNX','DX-Y.NYB','CL=F','GC=F','BTC-USD','ETH-USD',
-                '^N225','^HSI','000001.SS','^GDAXI','^FTSE','^FCHI','SOL-USD'];
+                '^N225','^HSI','000001.SS','^GDAXI','^FTSE','^FCHI','SOL-USD',
+                'XLK','SMH','SOXX','IGV','WCLD','SKYY','DRIV','XLC','XLY'];
 const SYM_STORAGE_KEY = 'nandaedge.watchlist.v1';
 function loadSyms(){
   try {
@@ -781,7 +796,14 @@ async function fetchForecast(){ try { FCST = await fetchJSON(`/forecast?symbols=
 async function fetchFG()  {     try { FG   = await fetchJSON('/feargreed', 8000);                                  } catch(e){ FG = null; } }
 let HIST = {};
 let OPTS = {};   // sym -> { puts: data, calls: data }
-async function fetchHistory(){ try { HIST = await fetchJSON(`/history?symbols=${watchSymParam()}&days=90`, 30000) || {}; } catch(e){ HIST = {}; } }
+let EARN = {};   // sym -> { nextDate, dte }
+async function fetchHistory(){  try { HIST = await fetchJSON(`/history?symbols=${watchSymParam()}&days=90`, 30000) || {}; } catch(e){ HIST = {}; } }
+async function fetchEarnings(){ try { EARN = await fetchJSON(`/earnings?symbols=${watchSymParam()}`,        45000) || {}; } catch(e){ EARN = {}; } }
+function fmtEarn(sym){
+  const e = EARN[sym]; if (!e || !e.nextDate) return null;
+  const d = e.dte;
+  return { date: e.nextDate, dte: d, label: e.nextDate.slice(5) + ' (' + (d != null ? d + 'd' : '?') + ')' };
+}
 
 async function fetchOptionChain(sym, type){
   try {
@@ -894,6 +916,18 @@ function renderMarket(map){
     el.textContent = pct(v);
     el.className = 'val '+cls(v);
   });
+  // Sector ETFs — % change
+  const sectorItems = [
+    ['XLK','xlk'],['SMH','smh'],['SOXX','soxx'],['IGV','igv'],
+    ['WCLD','wcld'],['SKYY','skyy'],['DRIV','driv'],['XLC','xlc'],['XLY','xly'],
+  ];
+  sectorItems.forEach(([sym,id])=>{
+    const q = map[sym]; const el = document.getElementById(id);
+    if(!q || !el) return;
+    const v = q.regularMarketChangePercent;
+    el.textContent = pct(v);
+    el.className = 'val '+cls(v);
+  });
   // VIX — absolute + regime update
   if(map['^VIX']){
     const v = map['^VIX'].regularMarketPrice;
@@ -980,9 +1014,11 @@ function renderWatchlist(map){
     const trendC   = t?.trend ? trendCls[t.trend]   : '';
     const sigCls = sigMap[m.signal]||'s-watch';
     const scCls  = smartCls(m.smartScore);
+    const ef = fmtEarn(sym);
+    const earnTag = ef ? `<div style="font-size:9px;color:${ef.dte!=null && ef.dte<=35 ? 'var(--red)' : 'var(--muted)'};margin-top:2px;font-weight:700;">📅 ${ef.label}</div>` : '';
     body.innerHTML += `
       <tr>
-        <td><div class="sym">${sym}</div><div class="co">${m.name}</div></td>
+        <td><div class="sym">${sym}</div><div class="co">${m.name}</div>${earnTag}</td>
         <td style="font-weight:800;">${price!=null?'$'+price.toFixed(2):'—'}</td>
         <td class="${cls(chgPct)}" style="font-weight:700;">${pct(chgPct)}</td>
         <td style="font-size:11px;color:var(--muted);white-space:nowrap;">${dayRange}</td>
@@ -1018,12 +1054,15 @@ function renderWatchlistMobile(map){
     const sigCls = sigMap[m.signal]||'s-watch';
     const vr = t?.volRatio;
     const vrCls = vr==null ? '' : vr>=1.5 ? 'up' : vr<0.6 ? 'dn' : 'nt';
+    const ef_m = fmtEarn(sym);
+    const earnTagM = ef_m ? `<div style="font-size:10px;color:${ef_m.dte!=null && ef_m.dte<=35 ? 'var(--red)' : 'var(--muted)'};margin-top:3px;font-weight:700;">📅 Earnings ${ef_m.label}</div>` : '';
     wrap.innerHTML += `
       <div class="m-card">
         <div class="m-card-row">
           <div>
             <div class="m-card-sym">${sym}</div>
             <div class="m-card-co">${m.name}</div>
+            ${earnTagM}
           </div>
           <div style="text-align:right;">
             <div class="m-card-price">${price!=null?'$'+price.toFixed(2):'—'}</div>
@@ -1141,7 +1180,15 @@ function scoreTicker(sym, q, t, f, opts){
   const puts = opts?.puts?.candidates || [];
   const bestCSP = puts.find(c => c.liqOK && (c.annualizedReturnPct || 0) >= 12);
   if (bestCSP) { score += 3; reasons.push(`CSP ${bestCSP.annualizedReturnPct.toFixed(0)}% ann`); }
-  return { sym, score, reasons, bestCSP, oneY };
+  // Earnings penalty: if earnings within 35 days, knock score down hard (skill rule)
+  const earn = EARN[sym];
+  let earnWarning = null;
+  if (earn?.dte != null) {
+    if (earn.dte >= 0 && earn.dte <= 7)        { score -= 4; earnWarning = `⚠ earnings in ${earn.dte}d`; }
+    else if (earn.dte > 7 && earn.dte <= 35)   { score -= 2; earnWarning = `⚠ earnings in ${earn.dte}d (inside CSP DTE)`; }
+    else if (earn.dte > 35 && earn.dte <= 50)  { earnWarning = `earnings in ${earn.dte}d`; }
+  }
+  return { sym, score, reasons, bestCSP, oneY, earnWarning };
 }
 
 function renderTopSetups(map){
@@ -1170,6 +1217,7 @@ function renderTopSetups(map){
       <div class="setup-row"><span class="lbl">Premium / Δ</span><span class="val">$${csp.mid.toFixed(2)} / ${csp.delta.toFixed(2)}</span></div>
       <div class="setup-row"><span class="lbl">Annualized</span><span class="val up">${csp.annualizedReturnPct.toFixed(1)}%</span></div>` : `
       <div class="setup-row"><span class="lbl">CSP</span><span class="val" style="color:var(--muted);">scan options to populate</span></div>`;
+    const earnLine = s.earnWarning ? `<div class="setup-row"><span class="lbl">Earnings</span><span class="val ${s.earnWarning.startsWith('⚠') ? 'dn' : 'nt'}">${s.earnWarning}</span></div>` : '';
     return `
       <div class="setup-card">
         <div class="setup-rank">${ranks[i]}<span class="setup-score">score ${s.score}</span></div>
@@ -1179,6 +1227,7 @@ function renderTopSetups(map){
         <div class="setup-row"><span class="lbl">Price</span><span class="val">$${price?.toFixed(2) ?? '—'}</span></div>
         <div class="setup-row"><span class="lbl">Trend / RSI</span><span class="val">${t?.trend ? trendLabel[t.trend] : '—'} · ${t?.rsi14?.toFixed(0) ?? '—'}</span></div>
         <div class="setup-row"><span class="lbl">1Y forecast</span><span class="val ${oneY && oneY.expReturnPct >= 0 ? 'up' : 'dn'}">${oneY ? (oneY.expReturnPct >= 0 ? '+' : '') + oneY.expReturnPct.toFixed(1) + '%' : '—'}</span></div>
+        ${earnLine}
         ${cspRow}
         <div class="setup-why">${s.reasons.join(' · ')}</div>
       </div>`;
@@ -1638,6 +1687,7 @@ async function refresh(){
     fetchTech(),
     fetchForecast(),
     fetchHistory(),
+    fetchEarnings(),
     fetchFG(),
   ]);
   if(!quotes){ return; }

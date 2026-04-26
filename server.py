@@ -61,19 +61,33 @@ MARKETS = [
     "DX-Y.NYB","CL=F","GC=F","BTC-USD","ETH-USD",
     "^N225","^HSI","000001.SS","^GDAXI","^FTSE","^FCHI","SOL-USD",
 ]
-ALL = WATCH + MARKETS
+SECTORS = [
+    # Curated for IT / semis / cloud / auto focus (user preference)
+    "XLK",   # Technology (broad)
+    "SMH",   # Semiconductors (VanEck — most liquid)
+    "SOXX",  # Semiconductors (iShares — alt weight)
+    "IGV",   # Software / IT services
+    "WCLD",  # Cloud computing (WisdomTree)
+    "SKYY",  # Cloud computing (First Trust)
+    "DRIV",  # Autonomous & EV (Global X)
+    "XLC",   # Communication Services
+    "XLY",   # Consumer Discretionary (TSLA-adjacent)
+]
+ALL = WATCH + MARKETS + SECTORS
 
 # ── Caching — per-symbol so user watchlists share cache ───
 _tech_cache  = {}                     # sym -> {"t": float, "data": dict}
 _fcst_cache  = {}                     # sym -> {"t": float, "data": dict}
 _opts_cache  = {}                     # (sym, type) -> {"t": float, "data": list}
 _hist_cache  = {}                     # (sym, days) -> {"t": float, "data": list}
+_earn_cache  = {}                     # sym -> {"t": float, "data": dict}
 _rate_cache  = {"t": 0, "rate": 0.045}  # risk-free rate from ^TNX
 _fg_cache    = {"t": 0, "data": None}
 TECH_TTL = 300                        # 5 min
 FCST_TTL = 3600                       # 1 hour — forecasts don't need to update often
 OPTS_TTL = 600                        # 10 min — options chains move fast but pulling is expensive
 HIST_TTL = 1800                       # 30 min — daily closes don't change intraday
+EARN_TTL = 86400                      # 24 hr — earnings dates rarely change intraday
 RATE_TTL = 3600                       # 1 hour for risk-free rate
 FG_TTL   = 600                        # 10 min
 
@@ -573,6 +587,68 @@ def fetch_history(syms, days=90):
                 out[sym] = []
     return out
 
+# ── Earnings calendar ──────────────────────────────────
+def fetch_earnings(syms):
+    """For each ticker, returns next upcoming earnings date (ISO) and DTE, or None."""
+    syms = syms or WATCH
+    now = time.time()
+    today = time.strftime("%Y-%m-%d")
+    today_t = time.mktime(time.strptime(today, "%Y-%m-%d"))
+
+    out = {}
+    fresh = []
+    for sym in syms:
+        c = _earn_cache.get(sym)
+        if c and (now - c["t"] < EARN_TTL):
+            out[sym] = c["data"]
+        else:
+            fresh.append(sym)
+
+    if fresh:
+        import yfinance as yf
+        for sym in fresh:
+            data = {"nextDate": None, "dte": None, "source": None}
+            try:
+                tk = yf.Ticker(sym)
+                # Try earnings_dates (preferred — DataFrame with future + past)
+                try:
+                    df = tk.earnings_dates
+                    if df is not None and not df.empty:
+                        future = df.index[df.index > __import__("pandas").Timestamp.now(tz=df.index.tz)]
+                        if len(future) > 0:
+                            next_dt = future.min()
+                            iso = next_dt.strftime("%Y-%m-%d")
+                            try:
+                                dte = int(round((time.mktime(time.strptime(iso, "%Y-%m-%d")) - today_t) / 86400.0))
+                            except Exception:
+                                dte = None
+                            data = {"nextDate": iso, "dte": dte, "source": "earnings_dates"}
+                except Exception:
+                    pass
+                # Fallback to calendar
+                if not data["nextDate"]:
+                    try:
+                        cal = tk.calendar
+                        if cal:
+                            ed = cal.get("Earnings Date") if isinstance(cal, dict) else None
+                            if ed:
+                                # Could be a list, datetime, or pd.Timestamp
+                                if isinstance(ed, (list, tuple)) and ed:
+                                    ed = ed[0]
+                                iso = ed.strftime("%Y-%m-%d") if hasattr(ed, "strftime") else str(ed)[:10]
+                                try:
+                                    dte = int(round((time.mktime(time.strptime(iso, "%Y-%m-%d")) - today_t) / 86400.0))
+                                except Exception:
+                                    dte = None
+                                data = {"nextDate": iso, "dte": dte, "source": "calendar"}
+                    except Exception:
+                        pass
+            except Exception as e:
+                print(f"  WARN earnings {sym}: {e}", flush=True)
+            _earn_cache[sym] = {"t": now, "data": data}
+            out[sym] = data
+    return out
+
 # ── CNN Fear & Greed ───────────────────────────────────
 def fetch_fg():
     now = time.time()
@@ -657,6 +733,15 @@ class Handler(BaseHTTPRequestHandler):
             t0 = time.time()
             data = fetch_forecast(syms)
             print(f"{sum(1 for v in data.values() if v)} ok in {time.time()-t0:.1f}s", flush=True)
+            self._send(200, "application/json", json.dumps(data).encode())
+
+        elif path == "/earnings":
+            syms = parse_symbols(qs, WATCH)
+            print(f"  [{time.strftime('%H:%M:%S')}] /earnings ({len(syms)}) ...", end=" ", flush=True)
+            t0 = time.time()
+            data = fetch_earnings(syms)
+            n = sum(1 for v in data.values() if v.get("nextDate"))
+            print(f"{n} dated in {time.time()-t0:.1f}s", flush=True)
             self._send(200, "application/json", json.dumps(data).encode())
 
         elif path == "/history":
