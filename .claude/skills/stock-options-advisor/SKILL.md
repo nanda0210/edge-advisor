@@ -78,11 +78,18 @@ The user runs a dashboard backend at `https://edge-advisor-api.onrender.com`. **
 | Quotes (price, day range, %, volume) | `GET /quotes?symbols=NVDA,...` | Include `^VIX,^GSPC,^IXIC` for regime |
 | Technicals (RSI, MACD, EMA, BB, ATR, VWAP, S/R, trend) | `GET /technicals?symbols=...` | Cached 5 min |
 | Forecast (GBM bands, μ, σ, P25/P75, 1w–5y) | `GET /forecast?symbols=...` | Cached 1 hr |
+| **Options chain (CSP / CC candidates with delta, IV, OI, BE, ann. return)** | **`GET /options?symbol=NVDA&type=puts\|calls&dte_min=&dte_max=&delta_min=&delta_max=&top=5`** | **Cached 10 min** |
 | Fear & Greed | `GET /feargreed` | CNN proxy |
 | Health / auth | `GET /health`, `GET /auth` | Public / auth check |
 
+**Defaults for `/options`** (matches this skill's gates exactly):
+- `puts`: dte 30–45, delta_abs 0.15–0.30
+- `calls`: dte 21–35, delta_abs 0.20–0.35
+- Each candidate includes: `strike`, `expiry`, `dte`, `delta`, `iv`, `mid`, `bid`, `ask`, `openInterest`, `volume`, `breakeven`, `capitalRequired` (puts only), `annualizedReturnPct`, `liqOK_OI`, `liqOK_Spread`, `liqOK` (combined).
+- Black-Scholes delta is computed server-side from the contract's IV using a stdlib `math.erf` implementation; risk-free rate auto-pulled from `^TNX`.
+- Candidates ranked: liquidity-passing first, then by annualized return desc.
+
 **What this skill cannot fetch — ask the user to paste:**
-- Live options chain (strikes, premiums, IV, delta, OI, volume, bid-ask)
 - Earnings dates beyond yfinance's basic field
 - Real-time analyst consensus beyond what `META` shows in `index.html`
 - Sector ETF prices not in the default symbol list (XLK, XLE, XLF, etc.) — request via `/quotes`

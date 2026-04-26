@@ -12,6 +12,7 @@ API endpoints (all accept `?symbols=NVDA,TSLA,...`):
 - `GET /quotes` — realtime prices (default: watchlist + market indices)
 - `GET /technicals` — EMA/RSI/MACD/BB/ATR/VWAP/S&R (cached 5 min, per symbol)
 - `GET /forecast` — GBM price projections for 1w / 1mo / 3mo / 6mo / 1y / 5y (cached 1 hr, per symbol)
+- `GET /options?symbol=NVDA&type=puts|calls` — live options chain candidates with Black-Scholes delta, IV, OI, mid, BE, annualized return (cached 10 min)
 - `GET /feargreed` — CNN Fear & Greed (cached 10 min)
 
 ---
@@ -227,3 +228,5 @@ For tickers not in the static `META` table, the dashboard shows a default neutra
 | 2026-04-25 | Made backend cloud-deployable; deployed to Render + GitHub Pages |
 | 2026-04-25 | Added `/forecast` (GBM) + user-editable watchlist (add/remove tickers) |
 | 2026-04-25 | Added password gate (SHA-256 Bearer-token auth, rate-limited) + 60s API timeout |
+| 2026-04-25 | Added mobile card layout for watchlist & forecast (<750px) |
+| 2026-04-25 | Added `/options` endpoint (Black-Scholes delta, OI/spread liquidity gates) + Options Candidates UI section |

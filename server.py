@@ -66,9 +66,13 @@ ALL = WATCH + MARKETS
 # ── Caching — per-symbol so user watchlists share cache ───
 _tech_cache  = {}                     # sym -> {"t": float, "data": dict}
 _fcst_cache  = {}                     # sym -> {"t": float, "data": dict}
+_opts_cache  = {}                     # (sym, type) -> {"t": float, "data": list}
+_rate_cache  = {"t": 0, "rate": 0.045}  # risk-free rate from ^TNX
 _fg_cache    = {"t": 0, "data": None}
 TECH_TTL = 300                        # 5 min
 FCST_TTL = 3600                       # 1 hour — forecasts don't need to update often
+OPTS_TTL = 600                        # 10 min — options chains move fast but pulling is expensive
+RATE_TTL = 3600                       # 1 hour for risk-free rate
 FG_TTL   = 600                        # 10 min
 
 # ── Symbol parsing / validation ──────────────────────────
@@ -359,6 +363,180 @@ def fetch_forecast(syms=None):
 
     return out
 
+# ── Black-Scholes (pure stdlib via math.erf) ───────────
+def _norm_cdf(x):
+    return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
+
+def _bs_d1(S, K, T, r, sigma):
+    if S <= 0 or K <= 0 or T <= 0 or sigma <= 0:
+        return None
+    return (math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * math.sqrt(T))
+
+def bs_call_delta(S, K, T, r, sigma):
+    d1 = _bs_d1(S, K, T, r, sigma)
+    return None if d1 is None else _norm_cdf(d1)
+
+def bs_put_delta(S, K, T, r, sigma):
+    d1 = _bs_d1(S, K, T, r, sigma)
+    return None if d1 is None else _norm_cdf(d1) - 1.0   # negative
+
+# ── Risk-free rate (10Y yield via ^TNX) ────────────────
+def get_risk_free_rate():
+    now = time.time()
+    if now - _rate_cache["t"] < RATE_TTL:
+        return _rate_cache["rate"]
+    try:
+        import yfinance as yf
+        info = yf.Ticker("^TNX").fast_info
+        v = float(info.last_price or 0)
+        if v > 0:
+            r = v / 100.0   # ^TNX is the yield × 10 (e.g. 45.0 = 4.50%) — but yfinance returns it as the percent already in modern versions
+            # Heuristic guard: realistic 10Y yields fall in 0.5%–10%. If r looks like 45, divide again.
+            if r > 0.20:
+                r = r / 10.0
+            _rate_cache.update(t=now, rate=r)
+            return r
+    except Exception as e:
+        print(f"  WARN risk-free rate: {e}", flush=True)
+    return _rate_cache["rate"]
+
+# ── Options chain (CSP / CC candidates) ────────────────
+def fetch_options(sym, opt_type, dte_min, dte_max, delta_min, delta_max, top_n=5):
+    """
+    Returns top-N candidate contracts matching the skill's gates.
+    opt_type: 'puts' (cash-secured puts) or 'calls' (covered calls)
+    """
+    cache_key = (sym, opt_type, dte_min, dte_max, round(delta_min, 2), round(delta_max, 2))
+    now = time.time()
+    c = _opts_cache.get(cache_key)
+    if c and (now - c["t"] < OPTS_TTL):
+        return c["data"]
+
+    import yfinance as yf
+    try:
+        tk = yf.Ticker(sym)
+        spot_info = tk.fast_info
+        S = float(spot_info.last_price or 0)
+        if S <= 0:
+            return {"symbol": sym, "type": opt_type, "spot": None, "candidates": [], "error": "no spot price"}
+    except Exception as e:
+        return {"symbol": sym, "type": opt_type, "spot": None, "candidates": [], "error": f"ticker fetch: {e}"}
+
+    r = get_risk_free_rate()
+
+    try:
+        expiries = list(tk.options or ())
+    except Exception as e:
+        return {"symbol": sym, "type": opt_type, "spot": S, "candidates": [], "error": f"no options listed: {e}"}
+    if not expiries:
+        return {"symbol": sym, "type": opt_type, "spot": S, "candidates": [], "error": "no expiries available"}
+
+    today = time.strftime("%Y-%m-%d")
+    today_t = time.mktime(time.strptime(today, "%Y-%m-%d"))
+
+    candidates = []
+    for exp in expiries:
+        try:
+            exp_t = time.mktime(time.strptime(exp, "%Y-%m-%d"))
+        except Exception:
+            continue
+        dte = max(0, int(round((exp_t - today_t) / 86400.0)))
+        if dte < dte_min or dte > dte_max:
+            continue
+        try:
+            chain = tk.option_chain(exp)
+            df = chain.puts if opt_type == "puts" else chain.calls
+        except Exception:
+            continue
+
+        for _, row in df.iterrows():
+            try:
+                strike = float(row["strike"])
+                bid    = float(row.get("bid", 0) or 0)
+                ask    = float(row.get("ask", 0) or 0)
+                last   = float(row.get("lastPrice", 0) or 0)
+                oi     = int(row.get("openInterest", 0) or 0)
+                vol    = int(row.get("volume", 0) or 0)
+                iv     = float(row.get("impliedVolatility", 0) or 0)
+            except Exception:
+                continue
+
+            if iv <= 0 or strike <= 0:
+                continue
+            mid = (bid + ask) / 2.0 if (bid > 0 and ask > 0) else last
+            if mid <= 0:
+                continue
+            spread_pct = ((ask - bid) / mid * 100.0) if (mid > 0 and ask > bid > 0) else None
+
+            T = dte / 365.0
+            if opt_type == "puts":
+                delta = bs_put_delta(S, strike, T, r, iv)
+            else:
+                delta = bs_call_delta(S, strike, T, r, iv)
+            if delta is None:
+                continue
+            delta_abs = abs(delta)
+            if delta_abs < delta_min or delta_abs > delta_max:
+                continue
+
+            # Liquidity flags (don't reject — surface them)
+            liq_oi   = oi >= 500
+            liq_spread = (spread_pct is not None) and (spread_pct <= 5.0)
+
+            if opt_type == "puts":
+                breakeven = strike - mid
+                cap_required = strike * 100
+                ann_return = (mid / strike) * (365.0 / max(dte, 1)) * 100.0 if dte > 0 else None
+            else:
+                breakeven = strike + mid    # call BE for short call from cost-basis perspective: strike + premium
+                cap_required = None         # CC sized against held shares
+                ann_return = (mid / S) * (365.0 / max(dte, 1)) * 100.0 if dte > 0 and S > 0 else None
+
+            candidates.append({
+                "symbol": sym,
+                "type": opt_type,
+                "expiry": exp,
+                "dte": dte,
+                "strike": round(strike, 2),
+                "bid": round(bid, 2),
+                "ask": round(ask, 2),
+                "mid": round(mid, 2),
+                "lastPrice": round(last, 2),
+                "openInterest": oi,
+                "volume": vol,
+                "iv": round(iv * 100, 1),
+                "delta": round(delta, 3),
+                "deltaAbs": round(delta_abs, 3),
+                "breakeven": round(breakeven, 2),
+                "capitalRequired": cap_required,
+                "annualizedReturnPct": round(ann_return, 2) if ann_return is not None else None,
+                "spreadPct": round(spread_pct, 2) if spread_pct is not None else None,
+                "liqOK_OI": liq_oi,
+                "liqOK_Spread": liq_spread,
+                "liqOK": bool(liq_oi and liq_spread),
+            })
+
+    # Rank: liquidity passed first, then by annualized return desc
+    candidates.sort(key=lambda c: (
+        0 if c["liqOK"] else 1,
+        -(c["annualizedReturnPct"] or 0)
+    ))
+
+    out = {
+        "symbol": sym,
+        "type": opt_type,
+        "spot": round(S, 2),
+        "riskFreeRate": round(r, 4),
+        "filter": {
+            "dte_min": dte_min, "dte_max": dte_max,
+            "delta_min": delta_min, "delta_max": delta_max,
+        },
+        "candidates": candidates[:top_n],
+        "totalFound": len(candidates),
+    }
+    _opts_cache[cache_key] = {"t": now, "data": out}
+    return out
+
 # ── CNN Fear & Greed ───────────────────────────────────
 def fetch_fg():
     now = time.time()
@@ -443,6 +621,27 @@ class Handler(BaseHTTPRequestHandler):
             t0 = time.time()
             data = fetch_forecast(syms)
             print(f"{sum(1 for v in data.values() if v)} ok in {time.time()-t0:.1f}s", flush=True)
+            self._send(200, "application/json", json.dumps(data).encode())
+
+        elif path == "/options":
+            sym = (qs.get("symbol", [""])[0] or "").strip().upper()
+            opt = (qs.get("type",   ["puts"])[0] or "puts").lower()
+            if opt not in ("puts", "calls"):
+                self._send(400, "application/json", b'{"error":"type must be puts or calls"}'); return
+            if not _SYM_RE.match(sym):
+                self._send(400, "application/json", b'{"error":"invalid symbol"}'); return
+            try:
+                dte_min  = int(qs.get("dte_min",  ["30" if opt == "puts" else "21"])[0])
+                dte_max  = int(qs.get("dte_max",  ["45" if opt == "puts" else "35"])[0])
+                d_min    = float(qs.get("delta_min", ["0.15" if opt == "puts" else "0.20"])[0])
+                d_max    = float(qs.get("delta_max", ["0.30" if opt == "puts" else "0.35"])[0])
+                top_n    = int(qs.get("top",      ["5"])[0])
+            except ValueError:
+                self._send(400, "application/json", b'{"error":"bad numeric param"}'); return
+            print(f"  [{time.strftime('%H:%M:%S')}] /options {sym} {opt} d{d_min}-{d_max} dte{dte_min}-{dte_max} ...", end=" ", flush=True)
+            t0 = time.time()
+            data = fetch_options(sym, opt, dte_min, dte_max, d_min, d_max, top_n)
+            print(f"{len(data.get('candidates', []))} cand in {time.time()-t0:.1f}s", flush=True)
             self._send(200, "application/json", json.dumps(data).encode())
 
         elif path == "/feargreed":

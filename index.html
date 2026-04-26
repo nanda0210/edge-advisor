@@ -185,6 +185,23 @@ tr:hover td{background:#1c2128;transition:.12s;}
 .loading-row td{text-align:center;padding:22px;color:var(--muted);}
 .spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--blue);border-top-color:transparent;border-radius:50%;animation:spin .8s linear infinite;margin-right:7px;vertical-align:middle;}
 
+/* OPTIONS CANDIDATES */
+.opt-section{border-top:1px solid var(--border);padding:14px 16px;}
+.opt-section:first-child{border-top:none;}
+.opt-sym-hdr{font-size:14px;font-weight:900;color:var(--blue);margin-bottom:10px;display:flex;align-items:center;gap:10px;}
+.opt-sym-hdr .spot{color:var(--text);font-size:12px;font-weight:700;}
+.opt-sym-hdr .meta{color:var(--muted);font-size:11px;font-weight:500;}
+.opt-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+.opt-sub{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:6px;}
+.opt-table{width:100%;font-size:11px;}
+.opt-table th{padding:5px 6px;font-size:9px;}
+.opt-table td{padding:6px 6px;font-size:11px;}
+.opt-empty{color:var(--muted);font-size:11px;padding:8px;font-style:italic;}
+.opt-err{color:var(--red);font-size:11px;padding:8px;}
+.liq-ok{color:var(--green);font-weight:800;}
+.liq-warn{color:var(--yellow);font-weight:800;}
+@media(max-width:750px){.opt-grid{grid-template-columns:1fr;}}
+
 /* MOBILE CARD VIEW (watchlist + forecast) */
 .m-cards{display:none;padding:8px;gap:8px;flex-direction:column;}
 .m-card{background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:11px 13px;}
@@ -475,6 +492,21 @@ tr:hover td{background:#1c2128;transition:.12s;}
   </div>
 </div>
 
+<!-- OPTIONS CANDIDATES -->
+<div>
+  <div class="sec-title">Options Candidates — Cash-Secured Puts &amp; Covered Calls</div>
+  <div class="card">
+    <div class="card-hdr">
+      <span>Filtered: <strong>CSP</strong> Δ 0.15–0.30 / 30–45 DTE · <strong>CC</strong> Δ 0.20–0.35 / 21–35 DTE · OI ≥ 500 preferred</span>
+      <button id="scan-options-btn"
+              style="background:var(--accent);border:none;color:#fff;padding:7px 16px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">Scan Options</button>
+    </div>
+    <div id="options-body" style="padding:14px 16px;color:var(--muted);font-size:12px;">
+      Click <strong>Scan Options</strong> to fetch live chains for your watchlist (cached 10 min).
+    </div>
+  </div>
+</div>
+
 <!-- TRADE PLANS -->
 <div>
   <div class="sec-title">Daily Trade Plans — 5-Layer Analysis</div>
@@ -712,6 +744,13 @@ async function fetchQuotes() {
 async function fetchTech(){     try { TECH = await fetchJSON(`/technicals?symbols=${watchSymParam()}`, 30000) || {}; } catch(e){ TECH = {}; } }
 async function fetchForecast(){ try { FCST = await fetchJSON(`/forecast?symbols=${watchSymParam()}`,   45000) || {}; } catch(e){ FCST = {}; } }
 async function fetchFG()  {     try { FG   = await fetchJSON('/feargreed', 8000);                                  } catch(e){ FG = null; } }
+async function fetchOptionChain(sym, type){
+  try {
+    return await fetchJSON(`/options?symbol=${encodeURIComponent(sym)}&type=${type}&top=3`, 60000);
+  } catch(e) {
+    return { symbol: sym, type, candidates: [], error: e.message || 'fetch failed' };
+  }
+}
 
 // ── HELPERS ───────────────────────────────────────────
 const fmtVol = v => !v?'—':v>=1e9?(v/1e9).toFixed(1)+'B':v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?(v/1e3).toFixed(0)+'K':v;
@@ -1006,6 +1045,91 @@ function resetTickers(){
 }
 
 function refreshAll(){ return refresh(); }
+
+// ── OPTIONS CANDIDATES ────────────────────────────────
+async function scanOptions(){
+  const body = document.getElementById('options-body');
+  const btn  = document.getElementById('scan-options-btn');
+  if (SYMS.length === 0) { body.innerHTML = '<span style="color:var(--muted);">No tickers in watchlist.</span>'; return; }
+  btn.disabled = true; const btnTxt = btn.textContent; btn.textContent = 'Scanning…';
+  body.innerHTML = `<div style="text-align:center;padding:18px;color:var(--muted);">
+    <span class="spinner"></span> Scanning ${SYMS.length} tickers (CSPs + CCs)…
+    <div style="margin-top:6px;font-size:10px;">First scan can take 30–60s; cached 10 min thereafter.</div>
+  </div>`;
+  try {
+    const tasks = SYMS.flatMap(sym => [
+      fetchOptionChain(sym, 'puts').then(d => ({sym, type: 'puts',  data: d})),
+      fetchOptionChain(sym, 'calls').then(d => ({sym, type: 'calls', data: d})),
+    ]);
+    const results = await Promise.all(tasks);
+    renderOptions(results);
+  } catch(e) {
+    body.innerHTML = `<div class="opt-err">Error: ${e.message || e}</div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = btnTxt;
+  }
+}
+
+function renderOptionsTable(d){
+  if (!d) return '<div class="opt-empty">no data</div>';
+  if (d.error && (!d.candidates || d.candidates.length === 0))
+    return `<div class="opt-empty">${d.error}</div>`;
+  if (!d.candidates || d.candidates.length === 0)
+    return '<div class="opt-empty">no candidates passed gates</div>';
+  const rows = d.candidates.map(c => {
+    const liqMark = c.liqOK ? '<span class="liq-ok">✓</span>' : '<span class="liq-warn">⚠</span>';
+    const ann = c.annualizedReturnPct != null ? c.annualizedReturnPct.toFixed(1) + '%' : '—';
+    const oiTxt = c.openInterest != null ? c.openInterest.toLocaleString() : '—';
+    return `<tr>
+      <td>${liqMark}</td>
+      <td style="font-weight:800;">$${c.strike.toFixed(2)}</td>
+      <td style="color:var(--muted);">${c.expiry.slice(5)} <span style="color:var(--text);">(${c.dte}d)</span></td>
+      <td>${c.delta.toFixed(2)}</td>
+      <td>$${c.mid.toFixed(2)}</td>
+      <td style="color:var(--muted);">${oiTxt}</td>
+      <td class="up" style="font-weight:700;">${ann}</td>
+    </tr>`;
+  }).join('');
+  return `<table class="opt-table">
+    <thead><tr>
+      <th></th><th>Strike</th><th>Expiry</th><th>Δ</th><th>Mid</th><th>OI</th><th>Ann</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function renderOptions(results){
+  const body = document.getElementById('options-body');
+  const bySym = {};
+  results.forEach(r => {
+    bySym[r.sym] = bySym[r.sym] || {};
+    bySym[r.sym][r.type] = r.data;
+  });
+  body.innerHTML = '';
+  body.style.padding = '0';
+  SYMS.forEach(sym => {
+    const data = bySym[sym] || {};
+    const spot = data.puts?.spot ?? data.calls?.spot;
+    body.innerHTML += `
+      <div class="opt-section">
+        <div class="opt-sym-hdr">
+          ${sym}
+          <span class="spot">${spot != null ? '$'+spot.toFixed(2) : ''}</span>
+          <span class="meta">${metaFor(sym).name}</span>
+        </div>
+        <div class="opt-grid">
+          <div>
+            <div class="opt-sub">Cash-Secured Puts (top 3)</div>
+            ${renderOptionsTable(data.puts)}
+          </div>
+          <div>
+            <div class="opt-sub">Covered Calls (top 3)</div>
+            ${renderOptionsTable(data.calls)}
+          </div>
+        </div>
+      </div>`;
+  });
+}
 
 // ── FORECAST ──────────────────────────────────────────
 function fcstCellHTML(p0, h){
@@ -1435,6 +1559,7 @@ function bootDashboard(){
   document.getElementById('add-ticker-btn').addEventListener('click', addTickerFromInput);
   document.getElementById('add-ticker-input').addEventListener('keydown', e => { if (e.key === 'Enter') addTickerFromInput(); });
   document.getElementById('reset-ticker-btn').addEventListener('click', resetTickers);
+  document.getElementById('scan-options-btn').addEventListener('click', scanOptions);
 
   refresh();
   setInterval(refresh, 60000);
