@@ -1682,25 +1682,30 @@ function updateClock(){
 
 // ── MAIN REFRESH ──────────────────────────────────────
 async function refresh(){
+  // Block only on what's needed for the first paint.
   const [quotes] = await Promise.all([
     fetchQuotes(),
     fetchTech(),
     fetchForecast(),
     fetchHistory(),
-    fetchEarnings(),
     fetchFG(),
   ]);
   if(!quotes){ return; }
   lastQuotes = quotes;
   const map = {};
   quotes.forEach(q=>map[q.symbol]=q);
-  renderMarket(map);
-  renderFearGreed();
-  renderTopSetups(map);
-  renderWatchlist(map);
-  renderTradeCards(map);
-  renderForecast(map);
+  try { renderMarket(map); } catch(e){ console.warn('renderMarket', e); }
+  try { renderFearGreed(); } catch(e){ console.warn('renderFearGreed', e); }
+  try { renderTopSetups(map); } catch(e){ console.warn('renderTopSetups', e); document.getElementById('setups-grid').innerHTML = '<div class="setup-empty" style="grid-column:1/-1;">Setup ranking unavailable — refresh to retry.</div>'; }
+  try { renderWatchlist(map); } catch(e){ console.warn('renderWatchlist', e); }
+  try { renderTradeCards(map); } catch(e){ console.warn('renderTradeCards', e); }
+  try { renderForecast(map); } catch(e){ console.warn('renderForecast', e); }
   document.getElementById('update-time').textContent = new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:true});
+
+  // Earnings: non-blocking enrichment — re-render when it lands
+  fetchEarnings().then(() => {
+    try { renderTopSetups(map); renderWatchlist(map); } catch(e){ console.warn('earnings re-render', e); }
+  });
 }
 
 // ── LOGIN OVERLAY ─────────────────────────────────────
