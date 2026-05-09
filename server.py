@@ -8,7 +8,7 @@ NandaEdge Data Server — v2.2
   Fear/Greed  → /feargreed                              CNN proxy
   Cloud-ready: reads PORT/HOST from env; binds 0.0.0.0 when PORT is set.
 """
-import os, sys, signal, time, json, math, socket, warnings, urllib.request, threading, hashlib
+import os, sys, signal, time, json, math, socket, warnings, urllib.request, threading, hashlib, random
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
@@ -90,6 +90,78 @@ HIST_TTL = 1800                       # 30 min — daily closes don't change int
 EARN_TTL = 86400                      # 24 hr — earnings dates rarely change intraday
 RATE_TTL = 3600                       # 1 hour for risk-free rate
 FG_TTL   = 600                        # 10 min
+
+# ── Options safety / strategy config ─────────────────────
+OPTIONS_MIN_DELAY = 1.4       # slow down Yahoo/option chain calls
+OPTIONS_ERROR_TTL = 180       # cache provider errors briefly to avoid hammering
+
+DTE_BUCKETS = {
+    "30": (21, 45),
+    "60": (46, 75),
+    "90": (76, 110),
+}
+
+_opts_last_call = {"t": 0.0}
+
+def _options_provider_delay():
+    """Protects data provider from rapid option-chain requests."""
+    elapsed = time.time() - _opts_last_call["t"]
+    wait = OPTIONS_MIN_DELAY - elapsed
+    if wait > 0:
+        time.sleep(wait + random.uniform(0.2, 0.8))
+    _opts_last_call["t"] = time.time()
+
+
+def _cache_options(cache_key, data):
+    _opts_cache[cache_key] = {"t": time.time(), "data": data}
+    return data
+
+
+def calculate_ai_confidence(delta_abs, iv_pct, oi, spread_pct=None):
+    score = 50
+
+    if 0.15 <= delta_abs <= 0.35:
+        score += 15
+    if oi >= 500:
+        score += 10
+    if oi >= 1000:
+        score += 8
+    if 20 <= iv_pct <= 80:
+        score += 8
+    if spread_pct is not None and spread_pct <= 5:
+        score += 7
+
+    return min(score, 95)
+
+
+def trade_rating(score):
+    if score >= 85:
+        return "Institutional Grade"
+    if score >= 72:
+        return "High Probability"
+    if score >= 62:
+        return "Moderate"
+    return "Speculative"
+
+
+def why_this_trade(opt_type, delta_abs, oi, iv_pct, spread_pct):
+    reasons = []
+
+    if 0.15 <= delta_abs <= 0.35:
+        reasons.append("Favorable delta range for premium strategy")
+    if oi >= 500:
+        reasons.append("Healthy open interest supports liquidity")
+    if iv_pct >= 20:
+        reasons.append("Elevated premium environment")
+    if spread_pct is not None and spread_pct <= 5:
+        reasons.append("Tight bid/ask spread improves execution quality")
+
+    if opt_type == "puts":
+        reasons.append("Cash-secured put setup can acquire shares at a lower effective basis")
+    else:
+        reasons.append("Covered call setup can generate income against existing shares")
+
+    return reasons[:4]
 
 # ── Symbol parsing / validation ──────────────────────────
 import re
@@ -419,84 +491,133 @@ def get_risk_free_rate():
 # ── Options chain (CSP / CC candidates) ────────────────
 def fetch_options(sym, opt_type, dte_min, dte_max, delta_min, delta_max, top_n=5):
     """
-    Returns top-N candidate contracts matching the skill's gates.
-    opt_type: 'puts' (cash-secured puts) or 'calls' (covered calls)
+    Returns top-N candidate contracts.
+    opt_type: 'puts' = cash-secured puts, 'calls' = covered calls.
+
+    Improvements:
+    - Caches both success and short-lived provider errors
+    - Slows option-chain calls to reduce Yahoo rate limiting
+    - Supports 30/60/90 DTE ranges through query params
+    - Adds AI confidence, trade rating, and why-this-trade explanations
     """
-    cache_key = (sym, opt_type, dte_min, dte_max, round(delta_min, 2), round(delta_max, 2))
+    cache_key = (sym, opt_type, dte_min, dte_max, round(delta_min, 2), round(delta_max, 2), top_n)
     now = time.time()
+
     c = _opts_cache.get(cache_key)
     if c and (now - c["t"] < OPTS_TTL):
         return c["data"]
 
     import yfinance as yf
+
     try:
+        _options_provider_delay()
         tk = yf.Ticker(sym)
         spot_info = tk.fast_info
         S = float(spot_info.last_price or 0)
+
         if S <= 0:
-            return {"symbol": sym, "type": opt_type, "spot": None, "candidates": [], "error": "no spot price"}
+            return _cache_options(cache_key, {
+                "symbol": sym,
+                "type": opt_type,
+                "spot": None,
+                "candidates": [],
+                "error": "no spot price"
+            })
+
     except Exception as e:
-        return {"symbol": sym, "type": opt_type, "spot": None, "candidates": [], "error": f"ticker fetch: {e}"}
+        err = str(e)
+        return _cache_options(cache_key, {
+            "symbol": sym,
+            "type": opt_type,
+            "spot": None,
+            "candidates": [],
+            "error": f"ticker fetch failed: {err}"
+        })
 
     r = get_risk_free_rate()
 
     try:
+        _options_provider_delay()
         expiries = list(tk.options or ())
     except Exception as e:
-        return {"symbol": sym, "type": opt_type, "spot": S, "candidates": [], "error": f"no options listed: {e}"}
+        err = str(e)
+        return _cache_options(cache_key, {
+            "symbol": sym,
+            "type": opt_type,
+            "spot": round(S, 2),
+            "candidates": [],
+            "error": f"options provider unavailable or rate limited: {err}"
+        })
+
     if not expiries:
-        return {"symbol": sym, "type": opt_type, "spot": S, "candidates": [], "error": "no expiries available"}
+        return _cache_options(cache_key, {
+            "symbol": sym,
+            "type": opt_type,
+            "spot": round(S, 2),
+            "candidates": [],
+            "error": "no expiries available"
+        })
 
     today = time.strftime("%Y-%m-%d")
     today_t = time.mktime(time.strptime(today, "%Y-%m-%d"))
 
     candidates = []
+
     for exp in expiries:
         try:
             exp_t = time.mktime(time.strptime(exp, "%Y-%m-%d"))
         except Exception:
             continue
+
         dte = max(0, int(round((exp_t - today_t) / 86400.0)))
+
         if dte < dte_min or dte > dte_max:
             continue
+
         try:
+            _options_provider_delay()
             chain = tk.option_chain(exp)
             df = chain.puts if opt_type == "puts" else chain.calls
-        except Exception:
+        except Exception as e:
+            err = str(e)
+            if "Too Many Requests" in err or "rate" in err.lower():
+                print(f"  WARN options {sym}: provider rate limited on {exp}", flush=True)
+                break
             continue
 
         for _, row in df.iterrows():
             try:
                 strike = float(row["strike"])
-                bid    = float(row.get("bid", 0) or 0)
-                ask    = float(row.get("ask", 0) or 0)
-                last   = float(row.get("lastPrice", 0) or 0)
-                oi     = int(row.get("openInterest", 0) or 0)
-                vol    = int(row.get("volume", 0) or 0)
-                iv     = float(row.get("impliedVolatility", 0) or 0)
+                bid = float(row.get("bid", 0) or 0)
+                ask = float(row.get("ask", 0) or 0)
+                last = float(row.get("lastPrice", 0) or 0)
+                oi = int(row.get("openInterest", 0) or 0)
+                vol = int(row.get("volume", 0) or 0)
+                iv = float(row.get("impliedVolatility", 0) or 0)
             except Exception:
                 continue
 
             if iv <= 0 or strike <= 0:
                 continue
+
             mid = (bid + ask) / 2.0 if (bid > 0 and ask > 0) else last
             if mid <= 0:
                 continue
+
             spread_pct = ((ask - bid) / mid * 100.0) if (mid > 0 and ask > bid > 0) else None
 
             T = dte / 365.0
-            if opt_type == "puts":
-                delta = bs_put_delta(S, strike, T, r, iv)
-            else:
-                delta = bs_call_delta(S, strike, T, r, iv)
+            delta = bs_put_delta(S, strike, T, r, iv) if opt_type == "puts" else bs_call_delta(S, strike, T, r, iv)
+
             if delta is None:
                 continue
+
             delta_abs = abs(delta)
+
             if delta_abs < delta_min or delta_abs > delta_max:
                 continue
 
-            # Liquidity flags (don't reject — surface them)
-            liq_oi   = oi >= 500
+            liq_oi = oi >= 500
             liq_spread = (spread_pct is not None) and (spread_pct <= 5.0)
 
             if opt_type == "puts":
@@ -504,13 +625,17 @@ def fetch_options(sym, opt_type, dte_min, dte_max, delta_min, delta_max, top_n=5
                 cap_required = strike * 100
                 ann_return = (mid / strike) * (365.0 / max(dte, 1)) * 100.0 if dte > 0 else None
             else:
-                breakeven = strike + mid    # call BE for short call from cost-basis perspective: strike + premium
-                cap_required = None         # CC sized against held shares
+                breakeven = strike + mid
+                cap_required = None
                 ann_return = (mid / S) * (365.0 / max(dte, 1)) * 100.0 if dte > 0 and S > 0 else None
+
+            iv_pct = iv * 100.0
+            ai_score = calculate_ai_confidence(delta_abs, iv_pct, oi, spread_pct)
 
             candidates.append({
                 "symbol": sym,
                 "type": opt_type,
+                "strategy": "Cash-Secured Put" if opt_type == "puts" else "Covered Call",
                 "expiry": exp,
                 "dte": dte,
                 "strike": round(strike, 2),
@@ -520,7 +645,7 @@ def fetch_options(sym, opt_type, dte_min, dte_max, delta_min, delta_max, top_n=5
                 "lastPrice": round(last, 2),
                 "openInterest": oi,
                 "volume": vol,
-                "iv": round(iv * 100, 1),
+                "iv": round(iv_pct, 1),
                 "delta": round(delta, 3),
                 "deltaAbs": round(delta_abs, 3),
                 "breakeven": round(breakeven, 2),
@@ -530,13 +655,21 @@ def fetch_options(sym, opt_type, dte_min, dte_max, delta_min, delta_max, top_n=5
                 "liqOK_OI": liq_oi,
                 "liqOK_Spread": liq_spread,
                 "liqOK": bool(liq_oi and liq_spread),
+                "aiConfidence": ai_score,
+                "tradeRating": trade_rating(ai_score),
+                "exitRule": "50% profit or 2× loss",
+                "why": why_this_trade(opt_type, delta_abs, oi, iv_pct, spread_pct),
             })
 
-    # Rank: liquidity passed first, then by annualized return desc
     candidates.sort(key=lambda c: (
         0 if c["liqOK"] else 1,
+        -c["aiConfidence"],
         -(c["annualizedReturnPct"] or 0)
     ))
+
+    error = None
+    if not candidates:
+        error = "no matching contracts found; try wider DTE/delta filters or wait for provider rate limit reset"
 
     out = {
         "symbol": sym,
@@ -544,14 +677,18 @@ def fetch_options(sym, opt_type, dte_min, dte_max, delta_min, delta_max, top_n=5
         "spot": round(S, 2),
         "riskFreeRate": round(r, 4),
         "filter": {
-            "dte_min": dte_min, "dte_max": dte_max,
-            "delta_min": delta_min, "delta_max": delta_max,
+            "dte_min": dte_min,
+            "dte_max": dte_max,
+            "delta_min": delta_min,
+            "delta_max": delta_max,
+            "supportedDTE": DTE_BUCKETS,
         },
         "candidates": candidates[:top_n],
         "totalFound": len(candidates),
+        "error": error,
     }
-    _opts_cache[cache_key] = {"t": now, "data": out}
-    return out
+
+    return _cache_options(cache_key, out)
 
 # ── History (daily closes for sparklines) ──────────────
 def fetch_history(syms, days=90):
@@ -810,7 +947,7 @@ class ThreadedServer(HTTPServer):
 # ── Main ───────────────────────────────────────────────
 if __name__ == "__main__":
     is_cloud = bool(os.environ.get("PORT"))
-    print(f"\n  NandaEdge Server v2.1 — {HOST}:{PORT}", flush=True)
+    print(f"\n  NandaEdge Server v3.0 — {HOST}:{PORT}", flush=True)
 
     if not is_cloud:
         if not port_free(PORT):
