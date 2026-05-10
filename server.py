@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-NandaEdge Data Server — v2.2
+NandaEdge Data Server — v3.5
   Dashboard   → /
   Quotes      → /quotes        ?symbols=NVDA,TSLA,...   realtime quotes
   Technicals  → /technicals    ?symbols=...             EMA/RSI/MACD/BB/ATR/VWAP
@@ -9,8 +9,32 @@ NandaEdge Data Server — v2.2
   Cloud-ready: reads PORT/HOST from env; binds 0.0.0.0 when PORT is set.
 """
 import os, sys, signal, time, json, math, socket, warnings, urllib.request, threading, hashlib, random
+from datetime import date, timedelta
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, urlencode
+
+BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
+
+def _load_dotenv(path=None):
+    """Tiny local .env loader; real env vars win and secrets are never logged."""
+    path = path or os.path.join(BASE_DIR, ".env")
+    if not os.path.exists(path):
+        return
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, val = line.split("=", 1)
+                key = key.strip()
+                val = val.strip().strip('"').strip("'")
+                if key and key not in os.environ:
+                    os.environ[key] = val
+    except Exception as e:
+        print(f"  WARN .env load skipped: {e}", flush=True)
+
+_load_dotenv()
 
 # ── Auth (optional: set AUTH_TOKEN_HASH in env to enable) ──
 AUTH_HASH = (os.environ.get("AUTH_TOKEN_HASH", "") or "").strip().lower()
@@ -52,8 +76,21 @@ warnings.filterwarnings("ignore")
 
 PORT      = int(os.environ.get("PORT", 8765))
 HOST      = os.environ.get("HOST", "0.0.0.0" if os.environ.get("PORT") else "localhost")
-BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
 HTML_FILE = os.path.join(BASE_DIR, "index.html")
+
+# ── Market-data credentials (optional; do not commit .env) ──
+# Schwab is prepared for OPTIONS CHAINS ONLY. Keep account scopes, order routes,
+# live trading, and account access out of this app.
+SCHWAB_APP_KEY       = (os.environ.get("SCHWAB_APP_KEY", "") or "").strip()
+SCHWAB_APP_SECRET    = (os.environ.get("SCHWAB_APP_SECRET", "") or "").strip()
+SCHWAB_CALLBACK_URL  = (os.environ.get("SCHWAB_CALLBACK_URL", "") or "").strip()
+SCHWAB_ACCESS_TOKEN  = (os.environ.get("SCHWAB_ACCESS_TOKEN", "") or "").strip()
+SCHWAB_REFRESH_TOKEN = (os.environ.get("SCHWAB_REFRESH_TOKEN", "") or "").strip()
+SCHWAB_BASE_URL      = (os.environ.get("SCHWAB_BASE_URL", "https://api.schwabapi.com") or "").rstrip("/")
+
+# Optional legacy/secondary provider. If absent, /options skips Tradier safely.
+TRADIER_ACCESS_TOKEN = (os.environ.get("TRADIER_ACCESS_TOKEN", "") or "").strip()
+TRADIER_BASE_URL     = (os.environ.get("TRADIER_BASE_URL", "https://api.tradier.com") or "").rstrip("/")
 
 WATCH = ["NVDA","TSLA","PLTR","AMD","MU","CRWD","INTC","IONQ","RGTI"]
 MARKETS = [
@@ -489,14 +526,235 @@ def get_risk_free_rate():
     return _rate_cache["rate"]
 
 # ── Options chain (CSP / CC candidates) ────────────────
+def _http_json(url, headers=None, timeout=10):
+    req = urllib.request.Request(url, headers=headers or {})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.load(r)
+
+
+def _num(v, default=None):
+    try:
+        if v in ("", None):
+            return default
+        return float(v)
+    except Exception:
+        return default
+
+
+def _int(v, default=0):
+    try:
+        if v in ("", None):
+            return default
+        return int(float(v))
+    except Exception:
+        return default
+
+
+def _iv_decimal(v):
+    iv = _num(v, 0.0) or 0.0
+    return iv / 100.0 if iv > 3.0 else iv
+
+
+def _today_and_window(dte_min, dte_max):
+    today = date.today()
+    return today, today + timedelta(days=dte_min), today + timedelta(days=dte_max)
+
+
+def _fetch_yahoo_spot(sym):
+    import yfinance as yf
+    _options_provider_delay()
+    tk = yf.Ticker(sym)
+    spot_info = tk.fast_info
+    return tk, float(spot_info.last_price or 0)
+
+
+def _fetch_schwab_option_rows(sym, opt_type, dte_min, dte_max):
+    """
+    Schwab Market Data integration for options chains only.
+
+    OAuth setup note for later:
+    1. Create a Schwab developer app and set SCHWAB_APP_KEY,
+       SCHWAB_APP_SECRET, and SCHWAB_CALLBACK_URL outside source control.
+    2. Complete Schwab's authorization-code flow externally.
+    3. Store only the resulting SCHWAB_ACCESS_TOKEN/SCHWAB_REFRESH_TOKEN in
+       the runtime environment or local .env. This app intentionally does not
+       request account scopes, place trades, or refresh tokens automatically.
+    """
+    if not SCHWAB_ACCESS_TOKEN:
+        raise RuntimeError("Schwab not configured: missing SCHWAB_ACCESS_TOKEN")
+
+    today, from_date, to_date = _today_and_window(dte_min, dte_max)
+    params = {
+        "symbol": sym,
+        "contractType": "PUT" if opt_type == "puts" else "CALL",
+        "strikeCount": 80,
+        "includeQuotes": "TRUE",
+        "strategy": "SINGLE",
+        "fromDate": from_date.isoformat(),
+        "toDate": to_date.isoformat(),
+    }
+    url = f"{SCHWAB_BASE_URL}/marketdata/v1/chains?{urlencode(params)}"
+    data = _http_json(url, headers={
+        "Authorization": f"Bearer {SCHWAB_ACCESS_TOKEN}",
+        "Accept": "application/json",
+    })
+
+    spot = _num(data.get("underlyingPrice") or data.get("underlying", {}).get("last"), None)
+    exp_map = data.get("putExpDateMap" if opt_type == "puts" else "callExpDateMap") or {}
+    rows = []
+    for exp_key, strikes in exp_map.items():
+        exp = exp_key.split(":", 1)[0]
+        try:
+            dte = max(0, (date.fromisoformat(exp) - today).days)
+        except Exception:
+            dte = None
+        if dte is None or dte < dte_min or dte > dte_max:
+            continue
+        for contracts in (strikes or {}).values():
+            for c in contracts or []:
+                rows.append({
+                    "provider": "schwab",
+                    "expiry": exp,
+                    "dte": _int(c.get("daysToExpiration"), dte),
+                    "strike": _num(c.get("strikePrice")),
+                    "bid": _num(c.get("bid"), 0.0),
+                    "ask": _num(c.get("ask"), 0.0),
+                    "last": _num(c.get("last") or c.get("lastPrice"), 0.0),
+                    "openInterest": _int(c.get("openInterest"), 0),
+                    "volume": _int(c.get("totalVolume") or c.get("volume"), 0),
+                    "iv": _iv_decimal(c.get("volatility") or c.get("impliedVolatility")),
+                    "delta": _num(c.get("delta"), None),
+                })
+    return {"provider": "schwab", "spot": spot, "rows": rows}
+
+
+def _tradier_expirations(sym):
+    url = f"{TRADIER_BASE_URL}/v1/markets/options/expirations?{urlencode({'symbol': sym, 'includeAllRoots': 'true', 'strikes': 'false'})}"
+    data = _http_json(url, headers={
+        "Authorization": f"Bearer {TRADIER_ACCESS_TOKEN}",
+        "Accept": "application/json",
+    })
+    dates = (data.get("expirations") or {}).get("date") or []
+    return dates if isinstance(dates, list) else [dates]
+
+
+def _fetch_tradier_option_rows(sym, opt_type, dte_min, dte_max):
+    if not TRADIER_ACCESS_TOKEN:
+        raise RuntimeError("Tradier not configured: missing TRADIER_ACCESS_TOKEN")
+
+    today, _, _ = _today_and_window(dte_min, dte_max)
+    expiries = []
+    for exp in _tradier_expirations(sym):
+        try:
+            dte = max(0, (date.fromisoformat(exp) - today).days)
+        except Exception:
+            continue
+        if dte_min <= dte <= dte_max:
+            expiries.append((exp, dte))
+
+    rows = []
+    for exp, dte in expiries:
+        params = {"symbol": sym, "expiration": exp, "greeks": "true"}
+        url = f"{TRADIER_BASE_URL}/v1/markets/options/chains?{urlencode(params)}"
+        data = _http_json(url, headers={
+            "Authorization": f"Bearer {TRADIER_ACCESS_TOKEN}",
+            "Accept": "application/json",
+        })
+        opts = (data.get("options") or {}).get("option") or []
+        if isinstance(opts, dict):
+            opts = [opts]
+        want = "put" if opt_type == "puts" else "call"
+        for c in opts:
+            if str(c.get("option_type", "")).lower() != want:
+                continue
+            greeks = c.get("greeks") or {}
+            rows.append({
+                "provider": "tradier",
+                "expiry": c.get("expiration_date") or exp,
+                "dte": dte,
+                "strike": _num(c.get("strike")),
+                "bid": _num(c.get("bid"), 0.0),
+                "ask": _num(c.get("ask"), 0.0),
+                "last": _num(c.get("last"), 0.0),
+                "openInterest": _int(c.get("open_interest"), 0),
+                "volume": _int(c.get("volume"), 0),
+                "iv": _iv_decimal(greeks.get("mid_iv") or greeks.get("iv")),
+                "delta": _num(greeks.get("delta"), None),
+            })
+
+    _, spot = _fetch_yahoo_spot(sym)
+    return {"provider": "tradier", "spot": spot, "rows": rows}
+
+
+def _fetch_yahoo_option_rows(sym, opt_type, dte_min, dte_max):
+    tk, spot = _fetch_yahoo_spot(sym)
+    expiries = list(tk.options or ())
+    today, _, _ = _today_and_window(dte_min, dte_max)
+    rows = []
+
+    for exp in expiries:
+        try:
+            dte = max(0, (date.fromisoformat(exp) - today).days)
+        except Exception:
+            continue
+        if dte < dte_min or dte > dte_max:
+            continue
+
+        _options_provider_delay()
+        chain = tk.option_chain(exp)
+        df = chain.puts if opt_type == "puts" else chain.calls
+        for _, row in df.iterrows():
+            rows.append({
+                "provider": "yahoo",
+                "expiry": exp,
+                "dte": dte,
+                "strike": _num(row.get("strike")),
+                "bid": _num(row.get("bid"), 0.0),
+                "ask": _num(row.get("ask"), 0.0),
+                "last": _num(row.get("lastPrice"), 0.0),
+                "openInterest": _int(row.get("openInterest"), 0),
+                "volume": _int(row.get("volume"), 0),
+                "iv": _iv_decimal(row.get("impliedVolatility")),
+                "delta": None,
+            })
+    return {"provider": "yahoo", "spot": spot, "rows": rows}
+
+
+def _fetch_option_rows(sym, opt_type, dte_min, dte_max):
+    providers = [
+        ("schwab", _fetch_schwab_option_rows, bool(SCHWAB_ACCESS_TOKEN)),
+        ("tradier", _fetch_tradier_option_rows, bool(TRADIER_ACCESS_TOKEN)),
+        ("yahoo", _fetch_yahoo_option_rows, True),
+    ]
+    warnings_out = []
+    for name, fn, enabled in providers:
+        if not enabled:
+            warnings_out.append(f"{name} skipped: not configured")
+            continue
+        try:
+            data = fn(sym, opt_type, dte_min, dte_max)
+            if data.get("spot") and data.get("rows"):
+                data["warnings"] = warnings_out
+                return data
+            warnings_out.append(f"{name} returned no matching contracts")
+        except Exception as e:
+            warnings_out.append(f"{name} unavailable: {e}")
+    return {"provider": None, "spot": None, "rows": [], "warnings": warnings_out}
+
+
 def fetch_options(sym, opt_type, dte_min, dte_max, delta_min, delta_max, top_n=5):
     """
     Returns top-N candidate contracts.
     opt_type: 'puts' = cash-secured puts, 'calls' = covered calls.
 
+    Provider priority:
+    - Schwab Market Data first when SCHWAB_ACCESS_TOKEN is configured
+    - Tradier second when TRADIER_ACCESS_TOKEN is configured
+    - Yahoo/yfinance fallback only as last resort
+
     Improvements:
-    - Caches both success and short-lived provider errors
-    - Slows option-chain calls to reduce Yahoo rate limiting
+    - Caches success and provider-fallback results
+    - Slows Yahoo option-chain calls to reduce provider rate limiting
     - Supports 30/60/90 DTE ranges through query params
     - Adds AI confidence, trade rating, and why-this-trade explanations
     """
@@ -507,159 +765,108 @@ def fetch_options(sym, opt_type, dte_min, dte_max, delta_min, delta_max, top_n=5
     if c and (now - c["t"] < OPTS_TTL):
         return c["data"]
 
-    import yfinance as yf
+    chain_data = _fetch_option_rows(sym, opt_type, dte_min, dte_max)
+    S = _num(chain_data.get("spot"), 0.0) or 0.0
+    provider = chain_data.get("provider")
+    provider_warnings = chain_data.get("warnings") or []
 
-    try:
-        _options_provider_delay()
-        tk = yf.Ticker(sym)
-        spot_info = tk.fast_info
-        S = float(spot_info.last_price or 0)
-
-        if S <= 0:
-            return _cache_options(cache_key, {
-                "symbol": sym,
-                "type": opt_type,
-                "spot": None,
-                "candidates": [],
-                "error": "no spot price"
-            })
-
-    except Exception as e:
-        err = str(e)
+    if S <= 0:
         return _cache_options(cache_key, {
             "symbol": sym,
             "type": opt_type,
             "spot": None,
+            "provider": provider,
+            "providerWarnings": provider_warnings,
             "candidates": [],
-            "error": f"ticker fetch failed: {err}"
+            "error": "no spot price"
         })
 
     r = get_risk_free_rate()
-
-    try:
-        _options_provider_delay()
-        expiries = list(tk.options or ())
-    except Exception as e:
-        err = str(e)
-        return _cache_options(cache_key, {
-            "symbol": sym,
-            "type": opt_type,
-            "spot": round(S, 2),
-            "candidates": [],
-            "error": f"options provider unavailable or rate limited: {err}"
-        })
-
-    if not expiries:
-        return _cache_options(cache_key, {
-            "symbol": sym,
-            "type": opt_type,
-            "spot": round(S, 2),
-            "candidates": [],
-            "error": "no expiries available"
-        })
-
-    today = time.strftime("%Y-%m-%d")
-    today_t = time.mktime(time.strptime(today, "%Y-%m-%d"))
-
     candidates = []
 
-    for exp in expiries:
+    for row in chain_data.get("rows") or []:
         try:
-            exp_t = time.mktime(time.strptime(exp, "%Y-%m-%d"))
+            exp = row["expiry"]
+            dte = int(row["dte"])
+            strike = float(row["strike"])
+            bid = float(row.get("bid", 0) or 0)
+            ask = float(row.get("ask", 0) or 0)
+            last = float(row.get("last", 0) or 0)
+            oi = int(row.get("openInterest", 0) or 0)
+            vol = int(row.get("volume", 0) or 0)
+            iv = float(row.get("iv", 0) or 0)
         except Exception:
             continue
 
-        dte = max(0, int(round((exp_t - today_t) / 86400.0)))
-
-        if dte < dte_min or dte > dte_max:
+        if iv <= 0 or strike <= 0:
             continue
 
-        try:
-            _options_provider_delay()
-            chain = tk.option_chain(exp)
-            df = chain.puts if opt_type == "puts" else chain.calls
-        except Exception as e:
-            err = str(e)
-            if "Too Many Requests" in err or "rate" in err.lower():
-                print(f"  WARN options {sym}: provider rate limited on {exp}", flush=True)
-                break
+        mid = (bid + ask) / 2.0 if (bid > 0 and ask > 0) else last
+        if mid <= 0:
             continue
 
-        for _, row in df.iterrows():
-            try:
-                strike = float(row["strike"])
-                bid = float(row.get("bid", 0) or 0)
-                ask = float(row.get("ask", 0) or 0)
-                last = float(row.get("lastPrice", 0) or 0)
-                oi = int(row.get("openInterest", 0) or 0)
-                vol = int(row.get("volume", 0) or 0)
-                iv = float(row.get("impliedVolatility", 0) or 0)
-            except Exception:
-                continue
+        spread_pct = ((ask - bid) / mid * 100.0) if (mid > 0 and ask > bid > 0) else None
 
-            if iv <= 0 or strike <= 0:
-                continue
-
-            mid = (bid + ask) / 2.0 if (bid > 0 and ask > 0) else last
-            if mid <= 0:
-                continue
-
-            spread_pct = ((ask - bid) / mid * 100.0) if (mid > 0 and ask > bid > 0) else None
-
-            T = dte / 365.0
+        T = dte / 365.0
+        provider_delta = _num(row.get("delta"), None)
+        if provider_delta is not None and opt_type == "puts" and provider_delta > 0:
+            provider_delta = -provider_delta
+        delta = provider_delta
+        if delta is None or abs(delta) > 1:
             delta = bs_put_delta(S, strike, T, r, iv) if opt_type == "puts" else bs_call_delta(S, strike, T, r, iv)
 
-            if delta is None:
-                continue
+        if delta is None:
+            continue
 
-            delta_abs = abs(delta)
+        delta_abs = abs(delta)
 
-            if delta_abs < delta_min or delta_abs > delta_max:
-                continue
+        if delta_abs < delta_min or delta_abs > delta_max:
+            continue
 
-            liq_oi = oi >= 500
-            liq_spread = (spread_pct is not None) and (spread_pct <= 5.0)
+        liq_oi = oi >= 500
+        liq_spread = (spread_pct is not None) and (spread_pct <= 5.0)
 
-            if opt_type == "puts":
-                breakeven = strike - mid
-                cap_required = strike * 100
-                ann_return = (mid / strike) * (365.0 / max(dte, 1)) * 100.0 if dte > 0 else None
-            else:
-                breakeven = strike + mid
-                cap_required = None
-                ann_return = (mid / S) * (365.0 / max(dte, 1)) * 100.0 if dte > 0 and S > 0 else None
+        if opt_type == "puts":
+            breakeven = strike - mid
+            cap_required = strike * 100
+            ann_return = (mid / strike) * (365.0 / max(dte, 1)) * 100.0 if dte > 0 else None
+        else:
+            breakeven = strike + mid
+            cap_required = None
+            ann_return = (mid / S) * (365.0 / max(dte, 1)) * 100.0 if dte > 0 and S > 0 else None
 
-            iv_pct = iv * 100.0
-            ai_score = calculate_ai_confidence(delta_abs, iv_pct, oi, spread_pct)
+        iv_pct = iv * 100.0
+        ai_score = calculate_ai_confidence(delta_abs, iv_pct, oi, spread_pct)
 
-            candidates.append({
-                "symbol": sym,
-                "type": opt_type,
-                "strategy": "Cash-Secured Put" if opt_type == "puts" else "Covered Call",
-                "expiry": exp,
-                "dte": dte,
-                "strike": round(strike, 2),
-                "bid": round(bid, 2),
-                "ask": round(ask, 2),
-                "mid": round(mid, 2),
-                "lastPrice": round(last, 2),
-                "openInterest": oi,
-                "volume": vol,
-                "iv": round(iv_pct, 1),
-                "delta": round(delta, 3),
-                "deltaAbs": round(delta_abs, 3),
-                "breakeven": round(breakeven, 2),
-                "capitalRequired": cap_required,
-                "annualizedReturnPct": round(ann_return, 2) if ann_return is not None else None,
-                "spreadPct": round(spread_pct, 2) if spread_pct is not None else None,
-                "liqOK_OI": liq_oi,
-                "liqOK_Spread": liq_spread,
-                "liqOK": bool(liq_oi and liq_spread),
-                "aiConfidence": ai_score,
-                "tradeRating": trade_rating(ai_score),
-                "exitRule": "50% profit or 2× loss",
-                "why": why_this_trade(opt_type, delta_abs, oi, iv_pct, spread_pct),
-            })
+        candidates.append({
+            "symbol": sym,
+            "type": opt_type,
+            "provider": provider,
+            "strategy": "Cash-Secured Put" if opt_type == "puts" else "Covered Call",
+            "expiry": exp,
+            "dte": dte,
+            "strike": round(strike, 2),
+            "bid": round(bid, 2),
+            "ask": round(ask, 2),
+            "mid": round(mid, 2),
+            "lastPrice": round(last, 2),
+            "openInterest": oi,
+            "volume": vol,
+            "iv": round(iv_pct, 1),
+            "delta": round(delta, 3),
+            "deltaAbs": round(delta_abs, 3),
+            "breakeven": round(breakeven, 2),
+            "capitalRequired": cap_required,
+            "annualizedReturnPct": round(ann_return, 2) if ann_return is not None else None,
+            "spreadPct": round(spread_pct, 2) if spread_pct is not None else None,
+            "liqOK_OI": liq_oi,
+            "liqOK_Spread": liq_spread,
+            "liqOK": bool(liq_oi and liq_spread),
+            "aiConfidence": ai_score,
+            "tradeRating": trade_rating(ai_score),
+            "exitRule": "50% profit or 2× loss",
+            "why": why_this_trade(opt_type, delta_abs, oi, iv_pct, spread_pct),
+        })
 
     candidates.sort(key=lambda c: (
         0 if c["liqOK"] else 1,
@@ -675,6 +882,8 @@ def fetch_options(sym, opt_type, dte_min, dte_max, delta_min, delta_max, top_n=5
         "symbol": sym,
         "type": opt_type,
         "spot": round(S, 2),
+        "provider": provider,
+        "providerWarnings": provider_warnings,
         "riskFreeRate": round(r, 4),
         "filter": {
             "dte_min": dte_min,
@@ -947,7 +1156,7 @@ class ThreadedServer(HTTPServer):
 # ── Main ───────────────────────────────────────────────
 if __name__ == "__main__":
     is_cloud = bool(os.environ.get("PORT"))
-    print(f"\n  NandaEdge Server v3.0 — {HOST}:{PORT}", flush=True)
+    print(f"\n  NandaEdge Server v3.5 — {HOST}:{PORT}", flush=True)
 
     if not is_cloud:
         if not port_free(PORT):

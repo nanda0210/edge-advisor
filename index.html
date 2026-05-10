@@ -6,30 +6,63 @@
 <title>NandaEdge Advisor — AI-Powered Institutional Trading Intelligence</title>
 <style>
 :root {
+  --bg:#eef3f8; --card:#ffffff; --card2:#f6f9fc; --border:#d5dee8;
+  --green:#12805c; --red:#c2413c; --yellow:#a66f00; --blue:#1769aa;
+  --purple:#7550b8; --orange:#c76628; --teal:#0b7f83;
+  --text:#18212f; --muted:#627187; --accent:#1769aa;
+  --bar:#dde8f3; --bar2:#e8eef5; --table:#f3f7fb; --hover:#e9f2fb;
+  --input:#ffffff; --shadow:0 12px 32px rgba(24,33,47,.08);
+}
+body.theme-dark {
   --bg:#0d1117; --card:#161b22; --card2:#1c2128; --border:#30363d;
   --green:#3fb950; --red:#f85149; --yellow:#d29922; --blue:#58a6ff;
   --purple:#bc8cff; --orange:#f0883e; --teal:#39d353;
   --text:#e6edf3; --muted:#8b949e; --accent:#1f6feb;
+  --bar:#0a0f17; --bar2:#0b1019; --table:#0d1117; --hover:#1c2128;
+  --input:#0d1117; --shadow:none;
 }
 *{box-sizing:border-box;margin:0;padding:0;}
 body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;}
+body.theme-dark header{background:var(--card);box-shadow:none;backdrop-filter:none;}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 @keyframes spin{to{transform:rotate(360deg)}}
 
 /* HEADER */
-header{background:var(--card);border-bottom:1px solid var(--border);padding:10px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
+header{background:rgba(255,255,255,.92);border-bottom:1px solid var(--border);padding:10px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;box-shadow:0 8px 24px rgba(24,33,47,.06);backdrop-filter:blur(10px);}
 .logo{font-size:17px;font-weight:800;letter-spacing:1px;color:var(--blue);}
 .logo span{color:var(--green);}
 .logo sub{font-size:9px;color:var(--muted);font-weight:400;letter-spacing:2px;display:block;margin-top:-2px;}
 .header-right{display:flex;gap:20px;align-items:center;}
 .market-status{display:flex;gap:6px;align-items:center;font-size:11px;font-weight:700;}
+.theme-wrap{position:relative;}
+.theme-controls{display:flex;align-items:center;gap:6px;}
+.theme-btn{display:flex;align-items:center;gap:6px;background:var(--card2);border:1px solid var(--border);color:var(--text);padding:4px 9px;border-radius:5px;cursor:pointer;font-size:11px;font-weight:700;}
+.theme-btn:hover,.theme-toggle:hover{border-color:var(--accent);}
+.theme-toggle{position:relative;width:74px;height:26px;background:var(--card2);border:1px solid var(--border);border-radius:999px;color:var(--muted);cursor:pointer;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;}
+.theme-toggle::before{content:'';position:absolute;top:3px;left:3px;width:32px;height:18px;border-radius:999px;background:var(--accent);transition:left .18s ease;}
+.theme-toggle[data-theme="dark"]::before{left:37px;}
+.theme-toggle .light-lbl,.theme-toggle .dark-lbl{position:absolute;top:6px;z-index:1;}
+.theme-toggle .light-lbl{left:9px;}
+.theme-toggle .dark-lbl{right:9px;}
+.theme-toggle[data-theme="light"] .light-lbl,.theme-toggle[data-theme="dark"] .dark-lbl{color:#fff;}
+.theme-swatch{width:13px;height:13px;border-radius:3px;border:1px solid var(--border);display:inline-block;}
+.theme-panel{position:absolute;right:0;top:34px;width:240px;background:var(--card);border:1px solid var(--border);border-radius:8px;box-shadow:var(--shadow);padding:10px;display:none;z-index:300;}
+.theme-panel.show{display:block;}
+.theme-panel-title{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px;}
+.theme-current{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;}
+.theme-chip{background:var(--card2);border:1px solid var(--border);border-radius:6px;padding:7px;font-size:10px;color:var(--muted);}
+.theme-chip strong{display:block;color:var(--text);font-size:11px;margin-top:3px;}
+.theme-choice{width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--card2);border:1px solid var(--border);color:var(--text);padding:8px 9px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700;margin-top:6px;text-align:left;}
+.theme-choice:hover,.theme-choice.active{border-color:var(--accent);background:var(--hover);}
+.theme-choice .muted{font-size:10px;color:var(--muted);font-weight:600;}
+.theme-dotset{display:flex;gap:4px;flex-shrink:0;}
 .dot{width:7px;height:7px;border-radius:50%;animation:pulse 2s infinite;}
 .dot-green{background:var(--green);}
 .dot-red{background:var(--red);}
 
 /* BARS */
-.index-bar{background:#0a0f17;border-bottom:1px solid var(--border);display:flex;overflow-x:auto;padding:0 12px;}
-.index-bar.asia-bar{background:#0b1019;}
+.index-bar{background:var(--bar);border-bottom:1px solid var(--border);display:flex;overflow-x:auto;padding:0 12px;}
+.index-bar.asia-bar{background:var(--bar2);}
 .idx{padding:7px 16px;border-right:1px solid var(--border);white-space:nowrap;display:flex;flex-direction:column;align-items:center;min-width:90px;}
 .idx .lbl{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;}
 .idx .val{font-size:13px;font-weight:700;margin-top:1px;}
@@ -43,15 +76,15 @@ header{background:var(--card);border-bottom:1px solid var(--border);padding:10px
 .main{padding:16px 20px;display:grid;gap:16px;}
 .sec-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);margin-bottom:10px;display:flex;align-items:center;gap:8px;}
 .sec-title::after{content:'';flex:1;height:1px;background:var(--border);}
-.card{background:var(--card);border:1px solid var(--border);border-radius:8px;overflow:hidden;}
+.card{background:var(--card);border:1px solid var(--border);border-radius:8px;overflow:hidden;box-shadow:var(--shadow);}
 .card-hdr{padding:11px 16px;border-bottom:1px solid var(--border);font-weight:600;font-size:13px;display:flex;justify-content:space-between;align-items:center;}
 
 /* TABLE */
 table{width:100%;border-collapse:collapse;}
-th{padding:8px 12px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid var(--border);background:#0d1117;white-space:nowrap;}
-td{padding:10px 12px;border-bottom:1px solid #1c2128;vertical-align:middle;}
+th{padding:8px 12px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid var(--border);background:var(--table);white-space:nowrap;}
+td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:middle;}
 tr:last-child td{border-bottom:none;}
-tr:hover td{background:#1c2128;transition:.12s;}
+tr:hover td{background:var(--hover);transition:.12s;}
 .sym{font-weight:800;font-size:14px;color:var(--blue);}
 .co{font-size:10px;color:var(--muted);margin-top:1px;}
 .up{color:var(--green);}
@@ -212,15 +245,22 @@ tr:hover td{background:#1c2128;transition:.12s;}
 .opt-sym-hdr{font-size:14px;font-weight:900;color:var(--blue);margin-bottom:10px;display:flex;align-items:center;gap:10px;}
 .opt-sym-hdr .spot{color:var(--text);font-size:12px;font-weight:700;}
 .opt-sym-hdr .meta{color:var(--muted);font-size:11px;font-weight:500;}
-.opt-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+.opt-hdr{gap:12px;align-items:flex-start;}
+.opt-filter{flex:1;line-height:1.45;}
+.opt-toggle{width:30px;height:30px;flex:0 0 30px;border:1px solid rgba(88,166,255,.35);background:rgba(88,166,255,.1);color:var(--blue);border-radius:5px;font-size:18px;font-weight:800;line-height:1;cursor:pointer;}
+.opt-toggle:hover{background:rgba(88,166,255,.18);}
+.opt-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;}
 .opt-sub{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:6px;}
 .opt-table{width:100%;font-size:11px;}
 .opt-table th{padding:5px 6px;font-size:9px;}
 .opt-table td{padding:6px 6px;font-size:11px;}
+.opt-table .legs{font-weight:800;line-height:1.35;}
+.opt-table .subtle{color:var(--muted);font-size:10px;}
 .opt-empty{color:var(--muted);font-size:11px;padding:8px;font-style:italic;}
 .opt-err{color:var(--red);font-size:11px;padding:8px;}
 .liq-ok{color:var(--green);font-weight:800;}
 .liq-warn{color:var(--yellow);font-weight:800;}
+@media(max-width:1200px){.opt-grid{grid-template-columns:1fr 1fr;}}
 @media(max-width:750px){.opt-grid{grid-template-columns:1fr;}}
 
 /* MOBILE CARD VIEW (watchlist + forecast) */
@@ -238,7 +278,7 @@ tr:hover td{background:#1c2128;transition:.12s;}
 .m-card-cell .val{font-weight:700;}
 .m-card-actions{display:flex;justify-content:flex-end;margin-top:9px;}
 .m-card-fc{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:9px;padding-top:9px;border-top:1px solid var(--border);}
-.m-card-fc-cell{background:rgba(255,255,255,.03);border-radius:5px;padding:7px 8px;text-align:center;}
+.m-card-fc-cell{background:rgba(23,105,170,.06);border-radius:5px;padding:7px 8px;text-align:center;}
 .m-card-fc-cell .lbl{font-size:9px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:3px;}
 .m-card-fc-cell .price{font-size:12px;font-weight:800;}
 .m-card-fc-cell .ret{font-size:10px;font-weight:700;}
@@ -278,17 +318,22 @@ tr:hover td{background:#1c2128;transition:.12s;}
   .logo sub{display:none;}
 }
 /* ── Login overlay ────────────────────────────────── */
-#login-overlay{position:fixed;inset:0;background:rgba(8,12,18,.97);z-index:9999;display:none;align-items:center;justify-content:center;backdrop-filter:blur(8px);}
+#login-overlay{position:fixed;inset:0;background:rgba(238,243,248,.96);z-index:9999;display:none;align-items:center;justify-content:center;backdrop-filter:blur(8px);}
 #login-overlay.show{display:flex;}
-#login-card{background:#161b22;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:32px 28px;width:340px;max-width:90vw;box-shadow:0 12px 40px rgba(0,0,0,.5);}
+#login-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:32px 28px;width:340px;max-width:90vw;box-shadow:var(--shadow);}
 #login-card .lg-title{font-size:18px;font-weight:800;margin-bottom:6px;}
 #login-card .lg-title span{color:var(--accent);}
 #login-card .lg-sub{font-size:12px;color:var(--muted);margin-bottom:20px;}
 #login-card label{display:block;font-size:11px;color:var(--muted);font-weight:700;margin-bottom:6px;letter-spacing:.5px;}
-#login-card input[type=password]{width:100%;background:#0d1117;border:1px solid rgba(255,255,255,.15);border-radius:5px;padding:11px 12px;color:#e6edf3;font-size:14px;font-family:inherit;outline:none;}
-#login-card input[type=password]:focus{border-color:var(--accent);}
+#login-card .pw-wrap{position:relative;}
+#login-card input[type=password],#login-card input[type=text].pw-input{width:100%;background:var(--input);border:1px solid var(--border);border-radius:5px;padding:11px 42px 11px 12px;color:var(--text);font-size:14px;font-family:inherit;outline:none;}
+#login-card input[type=password]:focus,#login-card input[type=text].pw-input:focus{border-color:var(--accent);}
+#login-card .pw-toggle{position:absolute;right:8px;top:50%;transform:translateY(-50%);width:28px;height:28px;margin:0;padding:0;display:flex;align-items:center;justify-content:center;background:transparent;border:none;border-radius:4px;color:var(--muted);cursor:pointer;}
+#login-card .pw-toggle:hover,#login-card .pw-toggle:focus-visible{background:rgba(23,105,170,.08);color:var(--text);outline:none;}
+#login-card .pw-toggle svg{width:17px;height:17px;stroke:currentColor;}
 #login-card .lg-row{display:flex;align-items:center;gap:8px;margin-top:14px;font-size:12px;color:var(--muted);}
 #login-card button{width:100%;margin-top:18px;background:var(--accent);border:none;color:#fff;padding:12px;border-radius:5px;font-weight:700;font-size:13px;cursor:pointer;font-family:inherit;}
+#login-card button.pw-toggle{position:absolute;right:8px;top:50%;transform:translateY(-50%);width:28px;height:28px;margin:0;padding:0;background:transparent;color:var(--muted);}
 #login-card button:disabled{opacity:.5;cursor:default;}
 #login-card .lg-msg{margin-top:14px;font-size:12px;text-align:center;min-height:18px;}
 #login-card .lg-msg.err{color:var(--red);} #login-card .lg-msg.ok{color:var(--green);}
@@ -303,7 +348,15 @@ tr:hover td{background:#1c2128;transition:.12s;}
     <div class="lg-title">Nanda<span>Edge</span> Advisor</div>
     <div class="lg-sub">Enter password to access dashboard</div>
     <label for="login-pw">PASSWORD</label>
-    <input id="login-pw" type="password" autocomplete="current-password" autofocus />
+    <div class="pw-wrap">
+      <input id="login-pw" class="pw-input" type="password" autocomplete="current-password" autofocus />
+      <button id="login-pw-toggle" class="pw-toggle" type="button" aria-label="Show password" aria-pressed="false">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="12" cy="12" r="3" stroke-width="2"/>
+        </svg>
+      </button>
+    </div>
     <div class="lg-row"><input id="login-remember" type="checkbox" checked /> <label for="login-remember" style="margin:0;">Remember on this device</label></div>
     <button id="login-btn">Unlock</button>
     <div id="login-msg" class="lg-msg"></div>
@@ -314,11 +367,38 @@ tr:hover td{background:#1c2128;transition:.12s;}
 
 <!-- HEADER -->
 <header>
-  <div class="logo">Nanda<span>Edge</span> Advisor <sub>v3.0</sub></div>
+  <div class="logo">Nanda<span>Edge</span> Advisor <sub>v3.5</sub></div>
   <div class="header-right">
     <div class="market-status">
       <div class="dot dot-green" id="mkt-dot"></div>
       <span id="mkt-label" style="color:var(--green);">LOADING...</span>
+    </div>
+    <div class="theme-wrap">
+      <div class="theme-controls">
+        <button id="theme-toggle" class="theme-toggle" type="button" data-theme="light" aria-label="Switch to dark theme">
+          <span class="light-lbl">Lt</span><span class="dark-lbl">Dk</span>
+        </button>
+        <button id="theme-menu-btn" class="theme-btn" type="button" aria-haspopup="true" aria-expanded="false">
+          <span id="theme-btn-swatch" class="theme-swatch"></span>
+          Display
+        </button>
+      </div>
+      <div id="theme-panel" class="theme-panel" role="dialog" aria-label="Color options">
+        <div class="theme-panel-title">Color Display</div>
+        <div class="theme-current">
+          <div class="theme-chip">Mode<strong id="theme-mode-val">—</strong></div>
+          <div class="theme-chip">BG<strong id="theme-bg-val">—</strong></div>
+          <div class="theme-chip">FG<strong id="theme-fg-val">—</strong></div>
+        </div>
+        <button class="theme-choice" type="button" data-theme="light">
+          <span>Research Light <span class="muted">(recommended)</span></span>
+          <span class="theme-dotset"><span class="theme-swatch" style="background:#eef3f8;"></span><span class="theme-swatch" style="background:#18212f;"></span></span>
+        </button>
+        <button class="theme-choice" type="button" data-theme="dark">
+          <span>Classic Dark</span>
+          <span class="theme-dotset"><span class="theme-swatch" style="background:#0d1117;"></span><span class="theme-swatch" style="background:#e6edf3;"></span></span>
+        </button>
+      </div>
     </div>
     <div style="color:var(--muted);font-size:11px;" id="clock"></div>
     <button onclick="refresh()" style="background:var(--accent);border:none;color:#fff;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:11px;font-weight:700;">↺ Refresh</button>
@@ -462,11 +542,11 @@ tr:hover td{background:#1c2128;transition:.12s;}
     </div>
     <div class="ticker-controls" style="display:flex;gap:8px;align-items:center;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.06);flex-wrap:wrap;">
       <input id="add-ticker-input" type="text" maxlength="12" placeholder="Add ticker (e.g. AAPL)"
-             style="background:#0d1117;border:1px solid rgba(255,255,255,.12);color:#e6edf3;padding:8px 10px;border-radius:4px;font-size:13px;font-family:inherit;width:180px;text-transform:uppercase;" />
+             style="background:var(--input);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-size:13px;font-family:inherit;width:180px;text-transform:uppercase;" />
       <button id="add-ticker-btn"
               style="background:rgba(63,185,80,.15);color:var(--green);border:1px solid rgba(63,185,80,.4);padding:8px 14px;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">+ Add</button>
       <button id="reset-ticker-btn"
-              style="background:rgba(255,255,255,.04);color:var(--muted);border:1px solid rgba(255,255,255,.12);padding:8px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit;">Reset to default</button>
+              style="background:rgba(23,105,170,.06);color:var(--muted);border:1px solid var(--border);padding:8px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit;">Reset to default</button>
       <span id="add-ticker-msg" style="font-size:11px;color:var(--muted);"></span>
     </div>
     <div class="desk-table">
@@ -541,10 +621,16 @@ tr:hover td{background:#1c2128;transition:.12s;}
   </div>
 </div>
 
+<!-- TRADE PLANS -->
+<div>
+  <div class="sec-title">Daily Trade Plans — 5-Layer Analysis</div>
+  <div class="trade-grid" id="trade-grid"></div>
+</div>
+
 <!-- OPTIONS CANDIDATES -->
 <div>
   <div class="sec-title">
-<div style="margin:20px 0;padding:18px;border:1px solid #333;border-radius:18px;background:#101010">
+<div style="margin:20px 0;padding:18px;border:1px solid var(--border);border-radius:18px;background:var(--card2)">
 <h2>Elite Strategy Engine</h2>
 
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px">
@@ -558,10 +644,11 @@ tr:hover td{background:#1c2128;transition:.12s;}
 <div>• AI Infrastructure Signals</div>
 </div>
 </div>
-Options Candidates — Cash-Secured Puts &amp; Covered Calls</div>
+Options Candidates — Cash-Secured Puts, Covered Calls &amp; Bull Call Spreads</div>
   <div class="card">
-    <div class="card-hdr">
-      <span>Filtered: <strong>CSP</strong> Δ 0.15–0.30 / 30–45 DTE · 60 DTE · 90 DTE · <strong>CC</strong> Δ 0.20–0.35 / 21–35 DTE · OI ≥ 500 preferred</span>
+    <div class="card-hdr opt-hdr">
+      <button id="options-toggle" class="opt-toggle" type="button" aria-label="Collapse options candidates" aria-expanded="true">−</button>
+      <span class="opt-filter">Filtered: <strong>CSP</strong> Δ 0.15–0.30 · <strong>CC</strong> Δ 0.20–0.35 · <strong>BCS</strong> long-call Δ 0.35–0.65 · 30 / 60 / 90 DTE · OI ≥ 500 preferred</span>
       <button id="scan-options-btn"
               style="background:var(--accent);border:none;color:#fff;padding:7px 16px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">Scan Options</button>
     </div>
@@ -569,12 +656,6 @@ Options Candidates — Cash-Secured Puts &amp; Covered Calls</div>
       Click <strong>Scan Options</strong> to fetch live chains for your watchlist (cached 10 min).
     </div>
   </div>
-</div>
-
-<!-- TRADE PLANS -->
-<div>
-  <div class="sec-title">Daily Trade Plans — 5-Layer Analysis</div>
-  <div class="trade-grid" id="trade-grid"></div>
 </div>
 
 <!-- OPTIONS + ANALYST + RISK ROW -->
@@ -799,7 +880,7 @@ async function fetchQuotes() {
         </div>
         <div style="color:var(--muted);font-size:12px;line-height:2;">
           API: <strong style="color:var(--blue);">${API_BASE}</strong><br>
-          If running locally: <code style="background:#0d1117;padding:6px 18px;border-radius:4px;color:var(--green);">python3 server.py</code>
+          If running locally: <code style="background:var(--card2);padding:6px 18px;border-radius:4px;color:var(--green);">python3 server.py</code>
         </div>
       </td></tr>`;
     return null;
@@ -810,7 +891,7 @@ async function fetchTech(){     try { TECH = await fetchJSON(`/technicals?symbol
 async function fetchForecast(){ try { FCST = await fetchJSON(`/forecast?symbols=${watchSymParam()}`,   45000) || {}; } catch(e){ FCST = {}; } }
 async function fetchFG()  {     try { FG   = await fetchJSON('/feargreed', 8000);                                  } catch(e){ FG = null; } }
 let HIST = {};
-let OPTS = {};   // sym -> { puts: data, calls: data }
+let OPTS = {};   // sym -> { puts: 30DTE data, calls: 30DTE data, byDte: {30,60,90} }
 let EARN = {};   // sym -> { nextDate, dte }
 async function fetchHistory(){  try { HIST = await fetchJSON(`/history?symbols=${watchSymParam()}&days=90`, 30000) || {}; } catch(e){ HIST = {}; } }
 async function fetchEarnings(){ try { EARN = await fetchJSON(`/earnings?symbols=${watchSymParam()}`,        45000) || {}; } catch(e){ EARN = {}; } }
@@ -820,11 +901,28 @@ function fmtEarn(sym){
   return { date: e.nextDate, dte: d, label: e.nextDate.slice(5) + ' (' + (d != null ? d + 'd' : '?') + ')' };
 }
 
-async function fetchOptionChain(sym, type){
+const DTE_WINDOWS = [
+  { key:'30', label:'30 DTE', min:21, max:45 },
+  { key:'60', label:'60 DTE', min:46, max:75 },
+  { key:'90', label:'90 DTE', min:76, max:110 },
+];
+
+async function fetchOptionChain(sym, type, bucket=DTE_WINDOWS[0], overrides={}){
   try {
-    return await fetchJSON(`/options?symbol=${encodeURIComponent(sym)}&type=${type}&top=3`, 60000);
+    const deltaMin = overrides.deltaMin ?? (type === 'puts' ? '0.15' : '0.20');
+    const deltaMax = overrides.deltaMax ?? (type === 'puts' ? '0.30' : '0.35');
+    const params = new URLSearchParams({
+      symbol: sym,
+      type,
+      dte_min: String(bucket.min),
+      dte_max: String(bucket.max),
+      delta_min: deltaMin,
+      delta_max: deltaMax,
+      top: String(overrides.top ?? '3'),
+    });
+    return await fetchJSON(`/options?${params.toString()}`, 90000);
   } catch(e) {
-    return { symbol: sym, type, candidates: [], error: e.message || 'fetch failed' };
+    return { symbol: sym, type, candidates: [], error: e.message || 'fetch failed', filter: { dte_min: bucket.min, dte_max: bucket.max } };
   }
 }
 
@@ -839,6 +937,10 @@ const fmt = (v, d=2) => v==null?'—':Number(v).toFixed(d);
 const fmtP = v => v==null?'—':'$'+Number(v).toFixed(Number(v)<20?2:Number(v)<100?1:0);
 const trendLabel = { strong_up:'↑ Strong Uptrend', up:'↑ Uptrend', range:'↔ Consolidation', down:'↓ Downtrend', strong_down:'↓ Strong Downtrend' };
 const trendCls   = { strong_up:'tv-up', up:'tv-up', range:'nt', down:'tv-dn', strong_down:'tv-dn' };
+const optionTradeRating = score => score >= 85 ? 'Institutional Grade'
+  : score >= 72 ? 'High Probability'
+  : score >= 62 ? 'Moderate'
+  : 'Speculative';
 
 // Round to a sensible options strike
 function roundStrike(x){
@@ -1081,7 +1183,7 @@ function renderWatchlistMobile(map){
           </div>
           <div style="text-align:right;">
             <div class="m-card-price">${price!=null?'$'+price.toFixed(2):'—'}</div>
-            <div class="m-card-chip ${chgC}" style="background:rgba(255,255,255,.04);">${pct(chgPct)}</div>
+            <div class="m-card-chip ${chgC}" style="background:rgba(23,105,170,.06);">${pct(chgPct)}</div>
           </div>
         </div>
         <div class="m-card-grid">
@@ -1256,18 +1358,24 @@ async function scanOptions(){
   if (SYMS.length === 0) { body.innerHTML = '<span style="color:var(--muted);">No tickers in watchlist.</span>'; return; }
   btn.disabled = true; const btnTxt = btn.textContent; btn.textContent = 'Scanning…';
   body.innerHTML = `<div style="text-align:center;padding:18px;color:var(--muted);">
-    <span class="spinner"></span> Scanning ${SYMS.length} tickers (CSPs + CCs)…
-    <div style="margin-top:6px;font-size:10px;">First scan can take 30–60s; cached 10 min thereafter.</div>
+    <span class="spinner"></span> Scanning ${SYMS.length} tickers across 30 / 60 / 90 DTE (CSPs + CCs + Bull Call Spreads)…
+    <div style="margin-top:6px;font-size:10px;">Schwab/Tradier are fastest when configured; Yahoo fallback may take 1–2 min on first scan.</div>
   </div>`;
   try {
-    const tasks = SYMS.flatMap(sym => [
-      fetchOptionChain(sym, 'puts').then(d => ({sym, type: 'puts',  data: d})),
-      fetchOptionChain(sym, 'calls').then(d => ({sym, type: 'calls', data: d})),
-    ]);
+    const tasks = SYMS.flatMap(sym => DTE_WINDOWS.flatMap(bucket => [
+      fetchOptionChain(sym, 'puts', bucket).then(d => ({sym, type: 'puts', bucket, data: d})),
+      fetchOptionChain(sym, 'calls', bucket).then(d => ({sym, type: 'calls', bucket, data: d})),
+      fetchOptionChain(sym, 'calls', bucket, { deltaMin:'0.35', deltaMax:'0.65', top:'12' }).then(d => ({sym, type: 'bullCalls', bucket, data: d})),
+    ]));
     const results = await Promise.all(tasks);
     // Cache for Top Setups scoring
     OPTS = {};
-    results.forEach(r => { OPTS[r.sym] = OPTS[r.sym] || {}; OPTS[r.sym][r.type] = r.data; });
+    results.forEach(r => {
+      OPTS[r.sym] = OPTS[r.sym] || { byDte: {} };
+      OPTS[r.sym].byDte[r.bucket.key] = OPTS[r.sym].byDte[r.bucket.key] || {};
+      OPTS[r.sym].byDte[r.bucket.key][r.type] = r.data;
+      if (r.bucket.key === '30') OPTS[r.sym][r.type] = r.data;
+    });
     renderOptions(results);
     // Re-render Top Setups with options data now available
     const map = {}; (lastQuotes || []).forEach(q => map[q.symbol] = q);
@@ -1281,29 +1389,111 @@ async function scanOptions(){
 
 let lastQuotes = [];
 
-function renderOptionsTable(d){
-  if (!d) return '<div class="opt-empty">no data</div>';
-  if (d.error && (!d.candidates || d.candidates.length === 0))
-    return `<div class="opt-empty">${d.error}</div>`;
-  if (!d.candidates || d.candidates.length === 0)
-    return '<div class="opt-empty">no candidates passed gates</div>';
-  const rows = d.candidates.map(c => {
+function firstCandidate(d){
+  return d?.candidates?.[0] || null;
+}
+
+function renderOptionsTable(byBucket, type){
+  const rows = DTE_WINDOWS.map(bucket => {
+    const d = byBucket?.[bucket.key]?.[type];
+    const c = firstCandidate(d);
+    if (!c) {
+      const msg = d?.error || 'no candidate';
+      return `<tr>
+        <td style="font-weight:800;">${bucket.label}</td>
+        <td colspan="6" class="subtle">${msg}</td>
+      </tr>`;
+    }
     const liqMark = c.liqOK ? '<span class="liq-ok">✓</span>' : '<span class="liq-warn">⚠</span>';
     const ann = c.annualizedReturnPct != null ? c.annualizedReturnPct.toFixed(1) + '%' : '—';
     const oiTxt = c.openInterest != null ? c.openInterest.toLocaleString() : '—';
     return `<tr>
-      <td>${liqMark}</td>
+      <td style="font-weight:800;">${bucket.label}</td>
       <td style="font-weight:800;">$${c.strike.toFixed(2)}</td>
       <td style="color:var(--muted);">${c.expiry.slice(5)} <span style="color:var(--text);">(${c.dte}d)</span></td>
       <td>${c.delta.toFixed(2)}</td>
       <td>$${c.mid.toFixed(2)}</td>
-      <td style="color:var(--muted);">${oiTxt}</td>
+      <td style="color:var(--muted);">${liqMark} ${oiTxt}</td>
       <td class="up" style="font-weight:700;">${ann}</td>
     </tr>`;
   }).join('');
   return `<table class="opt-table">
     <thead><tr>
-      <th></th><th>Strike</th><th>Expiry</th><th>Δ</th><th>Mid</th><th>OI</th><th>Ann</th>
+      <th>DTE</th><th>Strike</th><th>Expiry</th><th>Δ</th><th>Mid</th><th>OI</th><th>Ann</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function buildBullCallSpread(d){
+  const calls = (d?.candidates || []).slice().sort((a, b) => {
+    if (a.expiry !== b.expiry) return a.expiry.localeCompare(b.expiry);
+    return a.strike - b.strike;
+  });
+  let best = null;
+  for (const longLeg of calls) {
+    if (longLeg.delta == null || longLeg.delta < 0.35 || longLeg.delta > 0.65) continue;
+    const shortLeg = calls.find(c =>
+      c.expiry === longLeg.expiry &&
+      c.strike > longLeg.strike &&
+      c.delta != null &&
+      c.delta >= 0.18 &&
+      c.delta <= Math.min(0.45, longLeg.delta)
+    );
+    if (!shortLeg) continue;
+    const debit = (longLeg.mid || 0) - (shortLeg.mid || 0);
+    const width = shortLeg.strike - longLeg.strike;
+    if (debit <= 0 || width <= debit) continue;
+    const score = ((longLeg.aiConfidence || 50) + (shortLeg.aiConfidence || 50)) / 2;
+    const spread = {
+      expiry: longLeg.expiry,
+      dte: longLeg.dte,
+      longLeg,
+      shortLeg,
+      width,
+      debit,
+      maxProfit: (width - debit) * 100,
+      maxLoss: debit * 100,
+      breakeven: longLeg.strike + debit,
+      aiConfidence: Math.round(score),
+      tradeRating: optionTradeRating(Math.round(score)),
+    };
+    if (!best || spread.aiConfidence > best.aiConfidence || spread.maxProfit / spread.maxLoss > best.maxProfit / best.maxLoss) best = spread;
+  }
+  return best;
+}
+
+function renderBullCallSpreadTable(byBucket){
+  const rows = DTE_WINDOWS.map(bucket => {
+    const d = byBucket?.[bucket.key]?.bullCalls;
+    const s = buildBullCallSpread(d);
+    if (!s) {
+      const msg = d?.error || 'no spread pair';
+      return `<tr>
+        <td style="font-weight:800;">${bucket.label}</td>
+        <td colspan="6" class="subtle">${msg}</td>
+      </tr>`;
+    }
+    const rr = s.maxLoss > 0 ? (s.maxProfit / s.maxLoss).toFixed(1) + 'x' : '—';
+    return `<tr>
+      <td style="font-weight:800;">${bucket.label}</td>
+      <td class="legs">
+        Buy $${s.longLeg.strike.toFixed(2)} C<br>
+        <span class="subtle">Sell $${s.shortLeg.strike.toFixed(2)} C</span>
+      </td>
+      <td style="color:var(--muted);">${s.expiry.slice(5)} <span style="color:var(--text);">(${s.dte}d)</span></td>
+      <td>$${s.debit.toFixed(2)}</td>
+      <td class="up">$${s.maxProfit.toFixed(0)}</td>
+      <td class="dn">$${s.maxLoss.toFixed(0)}</td>
+      <td>
+        <span style="font-weight:800;">${rr}</span>
+        <div class="subtle">BE $${s.breakeven.toFixed(2)}</div>
+      </td>
+    </tr>`;
+  }).join('');
+  return `<table class="opt-table">
+    <thead><tr>
+      <th>DTE</th><th>Legs</th><th>Expiry</th><th>Debit</th><th>Max P</th><th>Max L</th><th>R/R</th>
     </tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
@@ -1314,13 +1504,14 @@ function renderOptions(results){
   const bySym = {};
   results.forEach(r => {
     bySym[r.sym] = bySym[r.sym] || {};
-    bySym[r.sym][r.type] = r.data;
+    bySym[r.sym][r.bucket.key] = bySym[r.sym][r.bucket.key] || {};
+    bySym[r.sym][r.bucket.key][r.type] = r.data;
   });
   body.innerHTML = '';
   body.style.padding = '0';
   SYMS.forEach(sym => {
     const data = bySym[sym] || {};
-    const spot = data.puts?.spot ?? data.calls?.spot;
+    const spot = data['30']?.puts?.spot ?? data['30']?.calls?.spot ?? data['60']?.puts?.spot ?? data['60']?.calls?.spot ?? data['90']?.puts?.spot ?? data['90']?.calls?.spot;
     body.innerHTML += `
       <div class="opt-section">
         <div class="opt-sym-hdr">
@@ -1330,12 +1521,16 @@ function renderOptions(results){
         </div>
         <div class="opt-grid">
           <div>
-            <div class="opt-sub">Cash-Secured Puts (top 3)</div>
-            ${renderOptionsTable(data.puts)}
+            <div class="opt-sub">Cash-Secured Puts — 30 / 60 / 90 DTE</div>
+            ${renderOptionsTable(data, 'puts')}
           </div>
           <div>
-            <div class="opt-sub">Covered Calls (top 3)</div>
-            ${renderOptionsTable(data.calls)}
+            <div class="opt-sub">Covered Calls — 30 / 60 / 90 DTE</div>
+            ${renderOptionsTable(data, 'calls')}
+          </div>
+          <div>
+            <div class="opt-sub">Bull Call Spread — 30 / 60 / 90 DTE</div>
+            ${renderBullCallSpreadTable(data)}
           </div>
         </div>
       </div>`;
@@ -1503,7 +1698,7 @@ function renderTradeCards(map){
             <div class="tc-row"><span class="tl">Expiry</span><span class="tv">${opt.exp} (${opt.dte} DTE)</span></div>
             <div class="tc-row"><span class="tl">Greeks</span><span class="tv" style="font-size:10px;">Δ ${opt.delta>0?'+':''}${opt.delta} &nbsp;Θ ${opt.theta} &nbsp;V ${opt.vega}</span></div>
             <div class="tc-row"><span class="tl">
-<div style="margin-top:12px;padding:14px;border:1px solid #333;border-radius:14px;background:#111">
+<div style="margin-top:12px;padding:14px;border:1px solid var(--border);border-radius:14px;background:var(--card2)">
   <div style="font-weight:700;margin-bottom:8px">AI Trade Intelligence</div>
   <div>AI Confidence: 87%</div>
   <div>Risk Level: Moderate</div>
@@ -1781,8 +1976,62 @@ async function handleLoginSubmit(){
 
 // ── BOOT ──────────────────────────────────────────────
 let _booted = false;
+const THEME_KEY = 'nandaedge.theme.v1';
+
+function cssVar(name){
+  return getComputedStyle(document.body).getPropertyValue(name).trim();
+}
+
+function updateThemeReadout(theme){
+  document.getElementById('theme-mode-val').textContent = theme === 'dark' ? 'Classic Dark' : 'Research Light';
+  document.getElementById('theme-bg-val').textContent = cssVar('--bg');
+  document.getElementById('theme-fg-val').textContent = cssVar('--text');
+  document.getElementById('theme-btn-swatch').style.background = cssVar('--bg');
+  const toggle = document.getElementById('theme-toggle');
+  toggle.dataset.theme = theme;
+  toggle.setAttribute('aria-label', theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme');
+  document.querySelectorAll('.theme-choice').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.theme === theme);
+  });
+}
+
+function applyTheme(theme){
+  const chosen = theme === 'dark' ? 'dark' : 'light';
+  document.body.classList.toggle('theme-dark', chosen === 'dark');
+  localStorage.setItem(THEME_KEY, chosen);
+  requestAnimationFrame(() => updateThemeReadout(chosen));
+}
+
+function initThemeControls(){
+  applyTheme(localStorage.getItem(THEME_KEY) || 'light');
+  document.getElementById('theme-toggle').addEventListener('click', () => {
+    applyTheme(document.body.classList.contains('theme-dark') ? 'light' : 'dark');
+  });
+  const menuBtn = document.getElementById('theme-menu-btn');
+  const panel = document.getElementById('theme-panel');
+  menuBtn.addEventListener('click', () => {
+    const show = !panel.classList.contains('show');
+    panel.classList.toggle('show', show);
+    menuBtn.setAttribute('aria-expanded', String(show));
+  });
+  document.querySelectorAll('.theme-choice').forEach(btn => {
+    btn.addEventListener('click', () => {
+      applyTheme(btn.dataset.theme);
+      panel.classList.remove('show');
+      menuBtn.setAttribute('aria-expanded', 'false');
+    });
+  });
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.theme-wrap')) {
+      panel.classList.remove('show');
+      menuBtn.setAttribute('aria-expanded', 'false');
+    }
+  });
+}
+
 function bootDashboard(){
   if (_booted) return; _booted = true;
+  initThemeControls();
   renderOptionsFlow();
   renderAnalystFeed();
   renderNews();
@@ -1795,14 +2044,33 @@ function bootDashboard(){
   document.getElementById('add-ticker-input').addEventListener('keydown', e => { if (e.key === 'Enter') addTickerFromInput(); });
   document.getElementById('reset-ticker-btn').addEventListener('click', resetTickers);
   document.getElementById('scan-options-btn').addEventListener('click', scanOptions);
+  document.getElementById('options-toggle').addEventListener('click', () => {
+    const btn = document.getElementById('options-toggle');
+    const body = document.getElementById('options-body');
+    const expanded = btn.getAttribute('aria-expanded') === 'true';
+    btn.textContent = expanded ? '+' : '−';
+    btn.setAttribute('aria-expanded', String(!expanded));
+    btn.setAttribute('aria-label', expanded ? 'Expand options candidates' : 'Collapse options candidates');
+    body.style.display = expanded ? 'none' : '';
+  });
 
   refresh();
   setInterval(refresh, 60000);
 }
 
 // Wire the login form
+document.body.classList.toggle('theme-dark', localStorage.getItem('nandaedge.theme.v1') === 'dark');
 document.getElementById('login-btn').addEventListener('click', handleLoginSubmit);
 document.getElementById('login-pw').addEventListener('keydown', e => { if (e.key === 'Enter') handleLoginSubmit(); });
+document.getElementById('login-pw-toggle').addEventListener('click', () => {
+  const input = document.getElementById('login-pw');
+  const btn = document.getElementById('login-pw-toggle');
+  const showing = input.type === 'text';
+  input.type = showing ? 'password' : 'text';
+  btn.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
+  btn.setAttribute('aria-pressed', String(!showing));
+  input.focus();
+});
 
 // Decide: stored token? validate it. Else: show login.
 (async () => {

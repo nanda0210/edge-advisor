@@ -234,3 +234,5 @@ For tickers not in the static `META` table, the dashboard shows a default neutra
 | 2026-04-25 | Added `/options` endpoint (Black-Scholes delta, OI/spread liquidity gates) + Options Candidates UI section |
 | 2026-04-25 | Added `/history` endpoint, SVG sparklines on forecast cards, and Today's Top Setups auto-ranked section |
 | 2026-04-25 | Added `/earnings` endpoint, sector ETF bar (curated: XLK/SMH/SOXX/IGV/WCLD/SKYY/DRIV/XLC/XLY), and earnings-aware Top Setups scoring |
+| 2026-05-09 | Released NandaEdge Advisor v3.1 with Schwab-first options-chain provider structure, Tradier secondary support, Yahoo fallback, and secret-safe environment configuration |
+| 2026-05-10 | Released NandaEdge Advisor v3.5 with refreshed light research-dashboard theme, collapsible options candidates, and 30/60/90 DTE strategy views |

@@ -182,4 +182,4 @@ finance-dashboard/
 
 ---
 
-*NandaEdge Advisor v2.0 — Built with Python & vanilla JS · Data via yfinance*
+*NandaEdge Advisor v3.5 — Built with Python & vanilla JS · Data via yfinance*
