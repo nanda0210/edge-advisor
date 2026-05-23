@@ -79,6 +79,12 @@ header{background:rgba(255,255,255,.92);border-bottom:1px solid var(--border);pa
 .dash-tab:hover{border-color:var(--accent);color:var(--text);}
 .dash-tab.active{background:var(--accent);border-color:var(--accent);color:#fff;}
 .tab-note{margin-left:auto;color:var(--muted);font-size:11px;}
+.wa-sync{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.wa-sync-btn{background:rgba(63,185,80,.13);border:1px solid rgba(63,185,80,.35);color:var(--green);border-radius:6px;padding:8px 11px;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.7px;cursor:pointer;}
+.wa-sync-btn:hover{border-color:var(--green);background:rgba(63,185,80,.2);}
+.wa-sync-btn:disabled{opacity:.65;cursor:wait;}
+.wa-sync-status{font-size:10px;color:var(--muted);max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+@media(max-width:900px){.dashboard-tabs{flex-wrap:wrap;}.tab-note{margin-left:0;order:3;width:100%;}.wa-sync{order:2;margin-left:auto;}.wa-sync-status{max-width:180px;}}
 .sec-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);margin-bottom:10px;display:flex;align-items:center;gap:8px;}
 .sec-title::after{content:'';flex:1;height:1px;background:var(--border);}
 .card{background:var(--card);border:1px solid var(--border);border-radius:8px;overflow:hidden;box-shadow:var(--shadow);}
@@ -530,6 +536,10 @@ tr:hover td{background:var(--hover);transition:.12s;}
     <button id="tab-overview" class="dash-tab active" type="button" role="tab" aria-selected="true" data-view="overview">Overview</button>
     <button id="tab-daytrade" class="dash-tab" type="button" role="tab" aria-selected="false" data-view="daytrade">Day Trade</button>
     <div class="tab-note" id="tab-note">Day-trade candles load only when the Day Trade tab is opened.</div>
+    <div class="wa-sync">
+      <button id="whatsapp-sync-btn" class="wa-sync-btn" type="button" title="Scan Downloads for a WhatsApp group export and refresh the local Advisor feed">WhatsApp Sync</button>
+      <span id="whatsapp-sync-status" class="wa-sync-status">Feed not checked</span>
+    </div>
   </div>
 
 <!-- MACRO REGIME -->
@@ -1056,12 +1066,14 @@ let OPTS = {};   // sym -> { puts: 30DTE data, calls: 30DTE data, byDte: {30,60,
 let EARN = {};   // sym -> { nextDate, dte }
 let DAYTRADE = null;
 let SPEC_DAYTRADE = null;
+let WHATSAPP_FEED = null;
 let ACTIVE_VIEW = 'overview';
 let DAYTRADE_LOADED = false;
 async function fetchHistory(){  try { HIST = await fetchJSON(`/history?symbols=${watchSymParam()}&days=90`, 30000) || {}; } catch(e){ HIST = {}; } }
 async function fetchEarnings(){ try { EARN = await fetchJSON(`/earnings?symbols=${watchSymParam()}`,        45000) || {}; } catch(e){ EARN = {}; } }
 async function fetchDayTrade(){ try { DAYTRADE = await fetchJSON('/daytrade?symbols=NVDA,AMD,IONQ&interval=5m&period=1d', 45000); } catch(e){ DAYTRADE = { results: [], error: e.message }; } }
 async function fetchSpecDayTrade(){ try { SPEC_DAYTRADE = await fetchJSON('/speculative-daytrade?limit=5', 70000); } catch(e){ SPEC_DAYTRADE = { results: [], activeAlerts: [], history: {days:{}}, learningNotes: [e.message] }; } }
+async function fetchWhatsAppFeed(){ try { WHATSAPP_FEED = await fetchJSON('/whatsapp-stock-feed', 12000); } catch(e){ WHATSAPP_FEED = { signals: [], error: e.message }; } return WHATSAPP_FEED; }
 function fmtEarn(sym){
   const e = EARN[sym]; if (!e || !e.nextDate) return null;
   const d = e.dte;
@@ -1359,6 +1371,40 @@ function renderSpeculativeDayTrade(){
   historyLine.textContent = days.length
     ? `${days.length} day(s) retained · ${completed.length} reviewed · ${exits} exits hit · ${invalid} invalidated`
     : 'History starts after the first scan.';
+}
+
+function renderWhatsAppSyncStatus(feed=WHATSAPP_FEED, prefix='Feed'){
+  const el = document.getElementById('whatsapp-sync-status');
+  if (!el) return;
+  const signals = feed?.signals || [];
+  if (feed?.error) {
+    el.textContent = `${prefix}: error`;
+    el.style.color = 'var(--red)';
+  } else if (signals.length) {
+    const ts = feed?.generatedAt ? new Date(feed.generatedAt).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:true}) : 'ready';
+    el.textContent = `${prefix}: ${signals.length} signal(s) · ${ts}`;
+    el.style.color = 'var(--green)';
+  } else {
+    el.textContent = `${prefix}: waiting for export`;
+    el.style.color = 'var(--muted)';
+  }
+}
+
+async function syncWhatsAppFeed(){
+  const btn = document.getElementById('whatsapp-sync-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Syncing...'; }
+  renderWhatsAppSyncStatus(WHATSAPP_FEED, 'Scanning Downloads');
+  try {
+    const data = await fetchJSON('/whatsapp-sync', 100000);
+    WHATSAPP_FEED = data?.feed || await fetchWhatsAppFeed();
+    const prefix = data?.stdout?.includes('processed') ? 'Synced' : 'Checked';
+    renderWhatsAppSyncStatus(WHATSAPP_FEED, prefix);
+  } catch(e) {
+    WHATSAPP_FEED = { signals: [], error: e.message };
+    renderWhatsAppSyncStatus(WHATSAPP_FEED, 'Sync');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'WhatsApp Sync'; }
+  }
 }
 
 // ── MARKET BAR ────────────────────────────────────────
@@ -2426,6 +2472,7 @@ function bootDashboard(){
   document.getElementById('add-ticker-input').addEventListener('keydown', e => { if (e.key === 'Enter') addTickerFromInput(); });
   document.getElementById('reset-ticker-btn').addEventListener('click', resetTickers);
   document.getElementById('scan-options-btn').addEventListener('click', scanOptions);
+  document.getElementById('whatsapp-sync-btn').addEventListener('click', syncWhatsAppFeed);
   document.querySelectorAll('.dash-tab').forEach(btn => {
     btn.addEventListener('click', () => setDashboardView(btn.dataset.view));
   });
@@ -2443,6 +2490,7 @@ function bootDashboard(){
     ? 'daytrade'
     : 'overview';
   setDashboardView(initialView);
+  fetchWhatsAppFeed().then(feed => renderWhatsAppSyncStatus(feed, 'Feed'));
   refresh();
   setInterval(() => {
     if (ACTIVE_VIEW === 'daytrade') refreshDayTradeTab(true);

@@ -10,7 +10,7 @@ NandaEdge Data Server — v3.6
   Fear/Greed  → /feargreed                              CNN proxy
   Cloud-ready: reads PORT/HOST from env; binds 0.0.0.0 when PORT is set.
 """
-import os, sys, signal, time, json, math, socket, warnings, urllib.request, threading, hashlib, random
+import os, sys, signal, time, json, math, socket, warnings, urllib.request, threading, hashlib, random, subprocess
 from datetime import date, timedelta, timezone
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, urlencode
@@ -22,6 +22,7 @@ WHATSAPP_STOCK_FEED_FILE = os.environ.get(
     "WHATSAPP_STOCK_FEED_FILE",
     os.path.expanduser("~/myprojects/edge-advisor-local/whatsapp-feeds/BuyAlertsContrbutingAndPaidMembers/whatsapp_stock_feed.json"),
 )
+WHATSAPP_AUTO_SCRIPT = os.path.join(BASE_DIR, "scripts", "whatsapp_stock_feed_auto.py")
 PACIFIC_TZ = ZoneInfo("America/Los_Angeles")
 
 def _load_dotenv(path=None):
@@ -1559,6 +1560,44 @@ def fetch_fg():
         print(f"  WARN F&G: {e}", flush=True)
         return None
 
+def load_whatsapp_stock_feed():
+    try:
+        with open(WHATSAPP_STOCK_FEED_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {
+            "group": "BuyAlertsContrbutingAndPaidMembers",
+            "signals": [],
+            "message": "No local WhatsApp stock feed found yet. Run scripts/whatsapp_stock_feed_auto.py after exporting the group chat.",
+            "expectedPath": WHATSAPP_STOCK_FEED_FILE,
+        }
+    except Exception as e:
+        return {"signals": [], "error": f"local feed unreadable: {e}"}
+
+def sync_whatsapp_stock_feed():
+    """Runs the fixed local WhatsApp export scan once; no user command input."""
+    if not os.path.exists(WHATSAPP_AUTO_SCRIPT):
+        return {"ok": False, "error": "auto ingester script missing", "feed": load_whatsapp_stock_feed()}
+    try:
+        proc = subprocess.run(
+            [sys.executable, WHATSAPP_AUTO_SCRIPT, "--once"],
+            cwd=BASE_DIR,
+            capture_output=True,
+            text=True,
+            timeout=90,
+        )
+        return {
+            "ok": proc.returncode == 0,
+            "returnCode": proc.returncode,
+            "stdout": (proc.stdout or "").strip()[-2000:],
+            "stderr": (proc.stderr or "").strip()[-2000:],
+            "feed": load_whatsapp_stock_feed(),
+        }
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": "WhatsApp sync timed out", "feed": load_whatsapp_stock_feed()}
+    except Exception as e:
+        return {"ok": False, "error": str(e), "feed": load_whatsapp_stock_feed()}
+
 # ── HTTP Handler ───────────────────────────────────────
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
@@ -1698,18 +1737,13 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, "application/json", json.dumps(data or {}).encode())
 
         elif path == "/whatsapp-stock-feed":
-            try:
-                with open(WHATSAPP_STOCK_FEED_FILE, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-            except FileNotFoundError:
-                data = {
-                    "group": "BuyAlertsContrbutingAndPaidMembers",
-                    "signals": [],
-                    "message": "No local WhatsApp stock feed found yet. Run scripts/whatsapp_stock_feed.py after exporting the group chat.",
-                    "expectedPath": WHATSAPP_STOCK_FEED_FILE,
-                }
-            except Exception as e:
-                data = {"signals": [], "error": f"local feed unreadable: {e}"}
+            self._send(200, "application/json", json.dumps(load_whatsapp_stock_feed()).encode())
+
+        elif path == "/whatsapp-sync":
+            print(f"  [{time.strftime('%H:%M:%S')}] /whatsapp-sync local scan ...", end=" ", flush=True)
+            t0 = time.time()
+            data = sync_whatsapp_stock_feed()
+            print(f"done in {time.time()-t0:.1f}s", flush=True)
             self._send(200, "application/json", json.dumps(data).encode())
 
         else:
