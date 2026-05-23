@@ -239,7 +239,28 @@ tr:hover td{background:var(--hover);transition:.12s;}
 @media(max-width:750px){.setups-grid{grid-template-columns:1fr;padding:10px;gap:10px;}}
 
 /* INTRADAY DAY TRADE SKILL */
+.dt-page{display:grid;gap:14px;}
+.dt-command{background:linear-gradient(135deg,rgba(88,166,255,.12),rgba(63,185,80,.07));border:1px solid var(--border);border-radius:8px;padding:14px 16px;}
+.dt-command-top{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;margin-bottom:12px;}
+.dt-command-title{font-size:17px;font-weight:900;color:var(--text);}
+.dt-command-sub{font-size:11px;color:var(--muted);line-height:1.45;margin-top:3px;max-width:760px;}
+.dt-readonly{font-size:10px;color:var(--yellow);font-weight:900;text-transform:uppercase;letter-spacing:.8px;white-space:nowrap;}
+.dt-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;}
+.dt-kpi{background:var(--card2);border:1px solid var(--border);border-radius:7px;padding:10px 11px;min-height:66px;}
+.dt-kpi span{display:block;font-size:9px;color:var(--muted);font-weight:900;text-transform:uppercase;letter-spacing:.9px;margin-bottom:5px;}
+.dt-kpi strong{display:block;font-size:19px;color:var(--text);line-height:1.1;}
+.dt-kpi small{display:block;color:var(--muted);font-size:10px;margin-top:4px;line-height:1.35;}
+.dt-layout{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(300px,.75fr);gap:14px;align-items:start;}
+.dt-stack{display:grid;gap:14px;}
+.dt-panel{background:var(--card);border:1px solid var(--border);border-radius:8px;overflow:hidden;}
+.dt-panel-hdr{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;padding:12px 14px;border-bottom:1px solid var(--border);}
+.dt-panel-title{font-size:13px;font-weight:900;color:var(--text);}
+.dt-panel-sub{font-size:10px;color:var(--muted);line-height:1.4;margin-top:2px;}
+.dt-side{display:grid;gap:14px;}
 .daytrade-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;padding:14px;}
+.dt-layout .daytrade-grid{grid-template-columns:repeat(2,minmax(0,1fr));}
+.dt-core-grid{grid-template-columns:repeat(3,minmax(0,1fr));}
+.dt-layout .dt-core-grid{grid-template-columns:repeat(3,minmax(0,1fr));}
 .dt-card{background:var(--card2);border:1px solid var(--border);border-radius:8px;overflow:hidden;}
 .dt-hdr{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;padding:12px 14px;border-bottom:1px solid var(--border);}
 .dt-sym{font-size:18px;font-weight:900;color:var(--blue);}
@@ -264,9 +285,12 @@ tr:hover td{background:var(--hover);transition:.12s;}
 .candle-line{stroke:var(--blue);stroke-width:1;stroke-dasharray:3 3;opacity:.8;}
 .alert-panel{padding:14px;display:grid;grid-template-columns:1fr 1fr;gap:12px;border-top:1px solid var(--border);}
 .alert-box{background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:11px 13px;}
+.dt-side .alert-box{border:none;border-radius:0;background:transparent;padding:13px 14px;}
 .alert-title{font-size:10px;font-weight:900;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;}
 .alert-list{display:grid;gap:7px;}
 .alert-row{display:grid;grid-template-columns:54px 1fr auto;gap:8px;align-items:center;background:var(--card);border:1px solid var(--border);border-radius:6px;padding:8px;font-size:11px;}
+.dt-side .alert-row{grid-template-columns:48px 1fr;align-items:flex-start;}
+.dt-side .alert-state{grid-column:1/-1;justify-self:start;}
 .alert-sym{font-weight:900;color:var(--blue);font-size:13px;}
 .alert-state{font-size:9px;font-weight:900;text-transform:uppercase;border-radius:999px;padding:3px 7px;}
 .alert-active{background:rgba(63,185,80,.16);color:var(--green);}
@@ -274,8 +298,9 @@ tr:hover td{background:var(--hover);transition:.12s;}
 .alert-invalid{background:rgba(248,81,73,.16);color:var(--red);}
 .learning-list{display:grid;gap:7px;color:var(--muted);font-size:11px;line-height:1.45;}
 .history-line{font-size:11px;color:var(--muted);line-height:1.45;border-top:1px solid var(--border);padding-top:7px;margin-top:7px;}
+@media(max-width:1200px){.dt-layout{grid-template-columns:1fr;}.dt-kpis{grid-template-columns:repeat(2,1fr);}.dt-layout .daytrade-grid,.dt-core-grid{grid-template-columns:1fr 1fr;}}
 @media(max-width:1100px){.daytrade-grid{grid-template-columns:1fr 1fr;}}
-@media(max-width:750px){.daytrade-grid,.alert-panel{grid-template-columns:1fr;padding:10px;}}
+@media(max-width:750px){.dt-command-top{display:block;}.dt-readonly{margin-top:8px;white-space:normal;}.dt-kpis,.daytrade-grid,.alert-panel,.dt-layout .daytrade-grid,.dt-core-grid{grid-template-columns:1fr;padding:10px;}.dt-command{padding:12px;}.dt-panel-hdr{display:block;}}
 
 /* SPARKLINE */
 .spark{display:inline-block;vertical-align:middle;}
@@ -582,57 +607,84 @@ tr:hover td{background:var(--hover);transition:.12s;}
 </div>
 
 <!-- INTRADAY DAY TRADE SKILL -->
-<div class="daytrade-section" style="display:none;">
-  <div class="sec-title">Intraday Candle Day-Trade Skill — NVDA, AMD, IONQ</div>
-  <div class="card">
-    <div class="card-hdr">
-      <span>5-minute Yahoo candles with VWAP, EMA9/20, ATR entry, exit, and stop levels</span>
-      <span style="font-size:10px;color:var(--muted);">Read-only analysis · not trade execution</span>
+<div class="daytrade-section dt-page" style="display:none;">
+  <div class="sec-title">Day Trade Workspace</div>
+  <div class="dt-command">
+    <div class="dt-command-top">
+      <div>
+        <div class="dt-command-title">NandaEdge Advisor Day Trade Command Center</div>
+        <div class="dt-command-sub">Top speculative alerts, active entry scripts, 7-day learning, and core NVDA / AMD / IONQ candle setups in one read-only workspace.</div>
+      </div>
+      <div class="dt-readonly">Read-only analysis · no trade execution</div>
     </div>
-    <div id="daytrade-grid" class="daytrade-grid">
-      <div class="dt-empty"><span class="spinner"></span>Loading candle-based day-trade levels…</div>
-    </div>
-    <div class="sources-bar">
-      <span style="font-size:9px;color:var(--muted);font-weight:700;margin-right:4px;">DAY TRADE DATA:</span>
-      <span class="src-tag">Yahoo Finance Candles</span>
-      <span class="src-tag">VWAP</span>
-      <span class="src-tag">EMA9 / EMA20</span>
-      <span class="src-tag">ATR Stops</span>
+    <div id="dt-summary-grid" class="dt-kpis">
+      <div class="dt-kpi"><span>Status</span><strong>Loading</strong><small>Waiting for candle scan</small></div>
+      <div class="dt-kpi"><span>Active Alerts</span><strong>—</strong><small>Entry scripts appear after scan</small></div>
+      <div class="dt-kpi"><span>Core Setups</span><strong>—</strong><small>NVDA, AMD, IONQ</small></div>
+      <div class="dt-kpi"><span>Learning</span><strong>—</strong><small>Previous-day success rate</small></div>
     </div>
   </div>
-</div>
 
-<!-- TOP SPECULATIVE 1-MIN ALERTS -->
-<div class="daytrade-section" style="display:none;">
-  <div class="sec-title">Top 5 Speculative 1-Min Candle Alerts — Weekly Learning History</div>
-  <div class="card">
-    <div class="card-hdr">
-      <span>Ranks volatile speculative names by 1-minute candle range, ATR, volume pulse, VWAP and EMA alignment</span>
-      <span style="font-size:10px;color:var(--muted);">Invalid alerts are removed from active list and saved to history</span>
-    </div>
-    <div id="spec-daytrade-grid" class="daytrade-grid">
-      <div class="dt-empty"><span class="spinner"></span>Scanning top speculative candle alerts…</div>
-    </div>
-    <div class="alert-panel">
-      <div class="alert-box">
-        <div class="alert-title">Alert Window — Active Entry Scripts</div>
-        <div id="spec-alert-list" class="alert-list">
-          <div class="dt-empty" style="padding:8px;">Waiting for scan…</div>
+  <div class="dt-layout">
+    <div class="dt-stack">
+      <section class="dt-panel">
+        <div class="dt-panel-hdr">
+          <div>
+            <div class="dt-panel-title">Top 5 Speculative 1-Min Candle Alerts</div>
+            <div class="dt-panel-sub">Ranks volatile names by 1-minute candle range, ATR, volume pulse, VWAP and EMA alignment.</div>
+          </div>
+          <span style="font-size:10px;color:var(--muted);">Invalid setups are removed from active alerts</span>
         </div>
-      </div>
-      <div class="alert-box">
-        <div class="alert-title">7-Day Prediction History &amp; Learning</div>
-        <div id="spec-learning-list" class="learning-list"></div>
-        <div id="spec-history-line" class="history-line">History starts after the first scan.</div>
-      </div>
+        <div id="spec-daytrade-grid" class="daytrade-grid">
+          <div class="dt-empty"><span class="spinner"></span>Scanning top speculative candle alerts…</div>
+        </div>
+        <div class="sources-bar">
+          <span style="font-size:9px;color:var(--muted);font-weight:700;margin-right:4px;">STRICT FILTER:</span>
+          <span class="src-tag">1-Min Yahoo Candles</span>
+          <span class="src-tag">Speculative Score</span>
+          <span class="src-tag">Invalidation Removal</span>
+          <span class="src-tag">7-Day Outcome Review</span>
+        </div>
+      </section>
+
+      <section class="dt-panel">
+        <div class="dt-panel-hdr">
+          <div>
+            <div class="dt-panel-title">Core Candle Setups — NVDA, AMD, IONQ</div>
+            <div class="dt-panel-sub">5-minute Yahoo candles with VWAP, EMA9/20, ATR entry, exit, and stop levels.</div>
+          </div>
+          <span style="font-size:10px;color:var(--muted);">Pacific timestamps on entry / exit / invalidation</span>
+        </div>
+        <div id="daytrade-grid" class="daytrade-grid dt-core-grid">
+          <div class="dt-empty"><span class="spinner"></span>Loading candle-based day-trade levels…</div>
+        </div>
+        <div class="sources-bar">
+          <span style="font-size:9px;color:var(--muted);font-weight:700;margin-right:4px;">DAY TRADE DATA:</span>
+          <span class="src-tag">Yahoo Finance Candles</span>
+          <span class="src-tag">VWAP</span>
+          <span class="src-tag">EMA9 / EMA20</span>
+          <span class="src-tag">ATR Stops</span>
+        </div>
+      </section>
     </div>
-    <div class="sources-bar">
-      <span style="font-size:9px;color:var(--muted);font-weight:700;margin-right:4px;">STRICT FILTER:</span>
-      <span class="src-tag">1-Min Yahoo Candles</span>
-      <span class="src-tag">Speculative Score</span>
-      <span class="src-tag">Invalidation Removal</span>
-      <span class="src-tag">7-Day Outcome Review</span>
-    </div>
+
+    <aside class="dt-side">
+      <section class="dt-panel">
+        <div class="alert-box">
+          <div class="alert-title">Alert Window — Active Entry Scripts</div>
+          <div id="spec-alert-list" class="alert-list">
+            <div class="dt-empty" style="padding:8px;">Waiting for scan…</div>
+          </div>
+        </div>
+      </section>
+      <section class="dt-panel">
+        <div class="alert-box">
+          <div class="alert-title">7-Day Prediction History &amp; Learning</div>
+          <div id="spec-learning-list" class="learning-list"></div>
+          <div id="spec-history-line" class="history-line">History starts after the first scan.</div>
+        </div>
+      </section>
+    </aside>
   </div>
 </div>
 
@@ -1204,6 +1256,29 @@ function summarizeSuccessRate(predictions){
   const losses = completed.filter(x => x.outcome === 'invalid').length;
   const rate = completed.length ? Math.round((wins / completed.length) * 100) : null;
   return { completed: completed.length, wins, losses, rate };
+}
+
+function renderDayTradeSummary(){
+  const el = document.getElementById('dt-summary-grid');
+  if (!el) return;
+  const core = (DAYTRADE?.results || []).filter(r => !r.error);
+  const spec = SPEC_DAYTRADE?.results || [];
+  const active = SPEC_DAYTRADE?.activeAlerts || [];
+  const days = Object.keys(SPEC_DAYTRADE?.history?.days || {}).sort();
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const priorDays = days.filter(d => d < todayKey).slice(-7);
+  const previousDay = priorDays[priorDays.length - 1];
+  const prevStats = previousDay ? summarizeSuccessRate(SPEC_DAYTRADE.history.days[previousDay].predictions || []) : null;
+  const lastSignal = active[0]?.signalTimePST || active[0]?.entryTimePST || spec[0]?.signalTimePST || core[0]?.signalTimePST || 'Waiting';
+  const success = prevStats?.completed ? `${prevStats.rate}%` : 'Pending';
+  const successNote = prevStats?.completed
+    ? `${prevStats.wins} exits hit / ${prevStats.losses} invalidated`
+    : 'Runs after market validation';
+  el.innerHTML = `
+    <div class="dt-kpi"><span>Last Signal</span><strong>${fmtPT(lastSignal)}</strong><small>Pacific market time</small></div>
+    <div class="dt-kpi"><span>Active Alerts</span><strong>${active.length}</strong><small>${spec.length} speculative setups scanned</small></div>
+    <div class="dt-kpi"><span>Core Setups</span><strong>${core.length}</strong><small>NVDA, AMD, IONQ 5-min candles</small></div>
+    <div class="dt-kpi"><span>Previous Day</span><strong>${success}</strong><small>${successNote}</small></div>`;
 }
 
 function renderSpeculativeDayTrade(){
@@ -2189,6 +2264,7 @@ async function refreshDayTradeTab(force=false){
   await Promise.all([fetchDayTrade(), fetchSpecDayTrade()]);
   try { renderDayTrade(); } catch(e){ console.warn('renderDayTrade', e); }
   try { renderSpeculativeDayTrade(); } catch(e){ console.warn('renderSpeculativeDayTrade', e); }
+  try { renderDayTradeSummary(); } catch(e){ console.warn('renderDayTradeSummary', e); }
 }
 
 function refreshActiveView(){
@@ -2355,7 +2431,10 @@ function bootDashboard(){
     body.style.display = expanded ? 'none' : '';
   });
 
-  setDashboardView('overview');
+  const initialView = new URLSearchParams(location.search).get('view') === 'daytrade' || location.hash === '#daytrade'
+    ? 'daytrade'
+    : 'overview';
+  setDashboardView(initialView);
   refresh();
   setInterval(() => {
     if (ACTIVE_VIEW === 'daytrade') refreshDayTradeTab(true);
