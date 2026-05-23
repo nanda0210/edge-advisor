@@ -1197,6 +1197,14 @@ function statusCls(status){
   return 'alert-active';
 }
 
+function summarizeSuccessRate(predictions){
+  const completed = (predictions || []).filter(x => ['exit_hit','invalid'].includes(x.outcome));
+  const wins = completed.filter(x => x.outcome === 'exit_hit').length;
+  const losses = completed.filter(x => x.outcome === 'invalid').length;
+  const rate = completed.length ? Math.round((wins / completed.length) * 100) : null;
+  return { completed: completed.length, wins, losses, rate };
+}
+
 function renderSpeculativeDayTrade(){
   const grid = document.getElementById('spec-daytrade-grid');
   const alerts = document.getElementById('spec-alert-list');
@@ -1248,8 +1256,21 @@ function renderSpeculativeDayTrade(){
       <span class="alert-state ${statusCls(r.alertStatus)}">${r.alertStatus || 'active'}</span>
     </div>`).join('') : '<div class="dt-empty" style="padding:8px;">No active alerts. Invalidated setups were removed.</div>';
 
-  learning.innerHTML = (SPEC_DAYTRADE?.learningNotes || []).map(note => `<div>• ${note}</div>`).join('');
   const days = Object.keys(SPEC_DAYTRADE?.history?.days || {}).sort();
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const priorDays = days.filter(d => d < todayKey).slice(-7);
+  const previousDay = priorDays[priorDays.length - 1];
+  const prevStats = previousDay ? summarizeSuccessRate(SPEC_DAYTRADE.history.days[previousDay].predictions || []) : null;
+  const weekStats = summarizeSuccessRate(priorDays.flatMap(d => SPEC_DAYTRADE.history.days[d].predictions || []));
+  const successSummary = previousDay && prevStats?.completed
+    ? `<div><strong style="color:var(--text);">Previous day ${previousDay}:</strong> ${prevStats.rate}% success · ${prevStats.wins} exits hit / ${prevStats.losses} invalidated</div>`
+    : '<div><strong style="color:var(--text);">Previous day:</strong> waiting for after-market validation data</div>';
+  const weekSummary = weekStats.completed
+    ? `<div><strong style="color:var(--text);">Last ${priorDays.length} retained day(s):</strong> ${weekStats.rate}% success · ${weekStats.wins} exits hit / ${weekStats.losses} invalidated</div>`
+    : '<div><strong style="color:var(--text);">Last 7 days:</strong> no completed validation outcomes yet</div>';
+  learning.innerHTML = [successSummary, weekSummary]
+    .concat((SPEC_DAYTRADE?.learningNotes || []).map(note => `<div>• ${note}</div>`))
+    .join('');
   const completed = days.flatMap(d => SPEC_DAYTRADE.history.days[d].predictions || []).filter(x => x.outcome);
   const exits = completed.filter(x => x.outcome === 'exit_hit').length;
   const invalid = completed.filter(x => x.outcome === 'invalid').length;
