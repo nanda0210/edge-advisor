@@ -11,12 +11,14 @@ NandaEdge Data Server — v3.6
   Cloud-ready: reads PORT/HOST from env; binds 0.0.0.0 when PORT is set.
 """
 import os, sys, signal, time, json, math, socket, warnings, urllib.request, threading, hashlib, random
-from datetime import date, timedelta
+from datetime import date, timedelta, timezone
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, urlencode
+from zoneinfo import ZoneInfo
 
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
 DAYTRADE_HISTORY_FILE = os.path.join(BASE_DIR, "daytrade_history.json")
+PACIFIC_TZ = ZoneInfo("America/Los_Angeles")
 
 def _load_dotenv(path=None):
     """Tiny local .env loader; real env vars win and secrets are never logged."""
@@ -295,6 +297,55 @@ def _safe_float(v, default=None):
         return default
 
 
+def _pacific_time_label(ts):
+    try:
+        if hasattr(ts, "to_pydatetime"):
+            dt = ts.to_pydatetime()
+        else:
+            dt = ts
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        pt = dt.astimezone(PACIFIC_TZ)
+        return pt.strftime("%b %-d, %-I:%M %p PT")
+    except Exception:
+        return None
+
+
+def _touch_times(d, bias, entry, exit_value, stop):
+    entry_ts = exit_ts = invalid_ts = None
+    entry_seen = False
+    for ts, row in d.iterrows():
+        hi = _safe_float(row.get("High"))
+        lo = _safe_float(row.get("Low"))
+        if hi is None or lo is None:
+            continue
+        if not entry_seen:
+            if bias == "SHORT":
+                entry_seen = lo <= entry
+            else:
+                entry_seen = hi >= entry
+            if entry_seen:
+                entry_ts = ts
+        if entry_seen:
+            if exit_ts is None:
+                if bias == "SHORT" and lo <= exit_value:
+                    exit_ts = ts
+                elif bias != "SHORT" and hi >= exit_value:
+                    exit_ts = ts
+            if invalid_ts is None:
+                if bias == "SHORT" and hi >= stop:
+                    invalid_ts = ts
+                elif bias != "SHORT" and lo <= stop:
+                    invalid_ts = ts
+    last_ts = d.index[-1] if len(d.index) else None
+    return {
+        "signalTimePST": _pacific_time_label(last_ts),
+        "entryTimePST": _pacific_time_label(entry_ts),
+        "exitTimePST": _pacific_time_label(exit_ts),
+        "invalidTimePST": _pacific_time_label(invalid_ts),
+    }
+
+
 def _trim_cache(cache, limit):
     """Keep short-lived in-memory caches from growing on cloud instances."""
     if len(cache) <= limit:
@@ -446,12 +497,14 @@ def _daytrade_for_frame(sym, d, interval):
     for ts, row in d.tail(DAYTRADE_CHART_LIMIT).iterrows():
         candles.append({
             "time": str(ts),
+            "timePST": _pacific_time_label(ts),
             "open": round(_safe_float(row.get("Open"), 0), 4),
             "high": round(_safe_float(row.get("High"), 0), 4),
             "low": round(_safe_float(row.get("Low"), 0), 4),
             "close": round(_safe_float(row.get("Close"), 0), 4),
             "volume": int(_safe_float(row.get("Volume"), 0) or 0),
         })
+    times = _touch_times(d, bias, entry, exit_value, stop)
 
     return {
         "symbol": sym,
@@ -476,6 +529,7 @@ def _daytrade_for_frame(sym, d, interval):
         "exitRule": "Take partial profits at exit value; trail remainder near EMA9/VWAP; exit immediately if stop-loss breaks.",
         "why": why,
         "candles": candles,
+        **times,
     }
 
 
@@ -548,7 +602,9 @@ def _compact_setup(setup, keep_candles=False):
         "target2", "stopLoss", "riskPerShare", "vwap", "ema9", "ema20", "atr",
         "dayHigh", "dayLow", "volumeRatio", "aiConfidence", "tradeRating",
         "exitRule", "why", "speculativeScore", "alertStatus", "alertReason",
-        "modelRule", "outcome", "outcomeReason", "realized", "whatWentWrong",
+        "modelRule", "signalTimePST", "entryTimePST", "exitTimePST",
+        "invalidTimePST", "outcome", "outcomeReason", "realized",
+        "whatWentWrong",
     ]
     compact = {k: setup[k] for k in fields if k in setup}
     if keep_candles and "candles" in setup:

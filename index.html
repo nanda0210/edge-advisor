@@ -1046,6 +1046,7 @@ const smartCls = s => s>=8?'sc-hi':s>=5?'sc-mid':'sc-lo';
 const fmt = (v, d=2) => v==null?'—':Number(v).toFixed(d);
 const fmtP = v => v==null?'—':'$'+Number(v).toFixed(Number(v)<20?2:Number(v)<100?1:0);
 const dtBiasCls = b => b === 'LONG' ? 'dt-long' : b === 'SHORT' ? 'dt-short' : 'dt-wait';
+const fmtPT = v => v || 'Waiting';
 const trendLabel = { strong_up:'↑ Strong Uptrend', up:'↑ Uptrend', range:'↔ Consolidation', down:'↓ Downtrend', strong_down:'↓ Strong Downtrend' };
 const trendCls   = { strong_up:'tv-up', up:'tv-up', range:'nt', down:'tv-dn', strong_down:'tv-dn' };
 const optionTradeRating = score => score >= 85 ? 'Institutional Grade'
@@ -1175,9 +1176,9 @@ function renderDayTrade(){
       <div class="dt-chart">${renderMiniCandles(r.candles, r.entryValue, r.exitValue, r.stopLoss)}</div>
       <div class="dt-body">
         <div class="dt-levels">
-          <div class="dt-level"><span>Entry</span><strong class="tv-bl">${fmtP(r.entryValue)}</strong></div>
-          <div class="dt-level"><span>Exit</span><strong class="tv-up">${fmtP(r.exitValue)}</strong></div>
-          <div class="dt-level"><span>Stop</span><strong class="tv-dn">${fmtP(r.stopLoss)}</strong></div>
+          <div class="dt-level"><span>Entry</span><strong class="tv-bl">${fmtP(r.entryValue)}</strong><div style="font-size:10px;color:var(--muted);margin-top:3px;">${fmtPT(r.entryTimePST || r.signalTimePST)}</div></div>
+          <div class="dt-level"><span>Exit</span><strong class="tv-up">${fmtP(r.exitValue)}</strong><div style="font-size:10px;color:var(--muted);margin-top:3px;">${fmtPT(r.exitTimePST)}</div></div>
+          <div class="dt-level"><span>Stop</span><strong class="tv-dn">${fmtP(r.stopLoss)}</strong><div style="font-size:10px;color:var(--muted);margin-top:3px;">${fmtPT(r.invalidTimePST)}</div></div>
         </div>
         <div class="dt-meta">
           <div>VWAP<strong>${fmtP(r.vwap)}</strong></div>
@@ -1230,9 +1231,9 @@ function renderSpeculativeDayTrade(){
       <div class="dt-chart">${renderMiniCandles(r.candles, r.entryValue, r.exitValue, r.stopLoss)}</div>
       <div class="dt-body">
         <div class="dt-levels">
-          <div class="dt-level"><span>Entry</span><strong class="tv-bl">${fmtP(r.entryValue)}</strong></div>
-          <div class="dt-level"><span>Day Exit</span><strong class="tv-up">${fmtP(r.exitValue)}</strong></div>
-          <div class="dt-level"><span>Invalid</span><strong class="tv-dn">${fmtP(r.stopLoss)}</strong></div>
+          <div class="dt-level"><span>Entry</span><strong class="tv-bl">${fmtP(r.entryValue)}</strong><div style="font-size:10px;color:var(--muted);margin-top:3px;">${fmtPT(r.entryTimePST || r.signalTimePST)}</div></div>
+          <div class="dt-level"><span>Day Exit</span><strong class="tv-up">${fmtP(r.exitValue)}</strong><div style="font-size:10px;color:var(--muted);margin-top:3px;">${fmtPT(r.exitTimePST)}</div></div>
+          <div class="dt-level"><span>Invalid</span><strong class="tv-dn">${fmtP(r.stopLoss)}</strong><div style="font-size:10px;color:var(--muted);margin-top:3px;">${fmtPT(r.invalidTimePST)}</div></div>
         </div>
         <div class="dt-meta">
           <div>VWAP<strong>${fmtP(r.vwap)}</strong></div>
@@ -1250,7 +1251,7 @@ function renderSpeculativeDayTrade(){
     <div class="alert-row">
       <div class="alert-sym">${r.symbol}</div>
       <div>
-        ${r.bias} entry <strong>${fmtP(r.entryValue)}</strong> · exit <strong>${fmtP(r.exitValue)}</strong> · invalid <strong>${fmtP(r.stopLoss)}</strong>
+        ${r.bias} entry <strong>${fmtP(r.entryValue)}</strong> @ ${fmtPT(r.entryTimePST || r.signalTimePST)} · exit <strong>${fmtP(r.exitValue)}</strong> @ ${fmtPT(r.exitTimePST)} · invalid <strong>${fmtP(r.stopLoss)}</strong>
         <div style="color:var(--muted);font-size:10px;margin-top:2px;">${r.alertReason || r.exitRule}</div>
       </div>
       <span class="alert-state ${statusCls(r.alertStatus)}">${r.alertStatus || 'active'}</span>
