@@ -3,3 +3,5 @@ __pycache__/
 .DS_Store
 .env
 daytrade_history.json
+whatsapp_stock_feed.json
+whatsapp-feeds/

@@ -18,6 +18,10 @@ from zoneinfo import ZoneInfo
 
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
 DAYTRADE_HISTORY_FILE = os.path.join(BASE_DIR, "daytrade_history.json")
+WHATSAPP_STOCK_FEED_FILE = os.environ.get(
+    "WHATSAPP_STOCK_FEED_FILE",
+    os.path.expanduser("~/myprojects/edge-advisor-local/whatsapp-feeds/BuyAlertsContrbutingAndPaidMembers/whatsapp_stock_feed.json"),
+)
 PACIFIC_TZ = ZoneInfo("America/Los_Angeles")
 
 def _load_dotenv(path=None):
@@ -1692,6 +1696,21 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/feargreed":
             data = fetch_fg()
             self._send(200, "application/json", json.dumps(data or {}).encode())
+
+        elif path == "/whatsapp-stock-feed":
+            try:
+                with open(WHATSAPP_STOCK_FEED_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except FileNotFoundError:
+                data = {
+                    "group": "BuyAlertsContrbutingAndPaidMembers",
+                    "signals": [],
+                    "message": "No local WhatsApp stock feed found yet. Run scripts/whatsapp_stock_feed.py after exporting the group chat.",
+                    "expectedPath": WHATSAPP_STOCK_FEED_FILE,
+                }
+            except Exception as e:
+                data = {"signals": [], "error": f"local feed unreadable: {e}"}
+            self._send(200, "application/json", json.dumps(data).encode())
 
         else:
             self._send(404, "text/plain", b"Not found")
