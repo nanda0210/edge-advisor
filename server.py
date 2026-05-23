@@ -107,9 +107,17 @@ SPECULATIVE_UNIVERSE = [
     "NVDA","AMD","IONQ","RGTI","PLTR","TSLA","MU","SMCI",
     "COIN","MARA","RIOT","SOUN","AI","QBTS","RKLB","SOFI"
 ]
+CAP_CATEGORY_UNIVERSES = {
+    # Curated active-trader lanes. These lists define the scan pool; ranking is
+    # still driven by live 1-minute candle range, ATR, volume pulse, and trend.
+    "small": ["RGTI", "SOUN", "QBTS", "BBAI", "KULR", "LAES", "LUNR", "JOBY"],
+    "mid": ["IONQ", "RKLB", "SOFI", "HOOD", "AFRM", "RBLX", "MARA", "RIOT"],
+    "large": ["NVDA", "AMD", "TSLA", "PLTR", "MU", "SMCI", "COIN", "AVGO"],
+}
 # Keep cloud memory stable. The full speculative universe can be expanded
 # later, but normal dashboard refreshes should not batch-load every hot ticker.
 SPECULATIVE_SCAN_LIMIT = int(os.environ.get("SPECULATIVE_SCAN_LIMIT", "8") or "8")
+CAP_CATEGORY_SCAN_LIMIT = int(os.environ.get("CAP_CATEGORY_SCAN_LIMIT", "8") or "8")
 DAYTRADE_HISTORY_DAYS = int(os.environ.get("DAYTRADE_HISTORY_DAYS", "7") or "7")
 CANDLE_RESPONSE_LIMIT = int(os.environ.get("CANDLE_RESPONSE_LIMIT", "120") or "120")
 DAYTRADE_CHART_LIMIT = int(os.environ.get("DAYTRADE_CHART_LIMIT", "32") or "32")
@@ -669,6 +677,15 @@ def _speculative_score(setup):
     return round(range_pct * 2.2 + atr_pct * 4.0 + min(vol_ratio, 5) * 8 + confidence * 0.35 + bias_bonus, 2)
 
 
+def _candle_variance_pct(setup):
+    last = _safe_float(setup.get("last"), 0) or 0
+    day_high = _safe_float(setup.get("dayHigh"), last) or last
+    day_low = _safe_float(setup.get("dayLow"), last) or last
+    if not last:
+        return 0
+    return round(((day_high - day_low) / max(last, 1)) * 100, 2)
+
+
 def _realized_for_symbol(frames, sym, day_key):
     d = frames.get(sym)
     if d is None or d.empty:
@@ -739,26 +756,48 @@ def _learning_notes(history):
 def fetch_speculative_daytrade(limit=5, validate_history=False):
     interval, period = "1m", "1d"
     today_key = date.today().isoformat()
-    universe = SPECULATIVE_UNIVERSE[:max(5, min(SPECULATIVE_SCAN_LIMIT, len(SPECULATIVE_UNIVERSE)))]
-    frames = _fetch_intraday_frames(universe, interval, period)
-    setups = []
-    for sym in universe:
-        try:
-            if sym not in frames:
-                continue
-            setup = _daytrade_for_frame(sym, frames[sym], interval)
-            if not setup:
-                continue
-            setup["speculativeScore"] = _speculative_score(setup)
-            status, reason = _setup_status(setup, last=setup.get("last"))
-            setup["alertStatus"] = status
-            setup["alertReason"] = reason
-            setup["modelRule"] = "1m candles: rank range% + ATR% + volume pulse + VWAP/EMA alignment; remove active alert when stop invalidates."
-            setups.append(setup)
-        except Exception as e:
-            print(f"  WARN speculative setup {sym}: {e}", flush=True)
-    setups.sort(key=lambda x: (x.get("alertStatus") == "active", x.get("speculativeScore", 0)), reverse=True)
-    top = setups[:max(1, min(limit, 8))]
+    limit = max(1, min(limit, 8))
+
+    def build_setups(universe, category=None):
+        scan_limit = max(limit, min(CAP_CATEGORY_SCAN_LIMIT if category else SPECULATIVE_SCAN_LIMIT, len(universe)))
+        scan_universe = universe[:scan_limit]
+        frames = _fetch_intraday_frames(scan_universe, interval, period)
+        rows = []
+        for sym in scan_universe:
+            try:
+                if sym not in frames:
+                    continue
+                setup = _daytrade_for_frame(sym, frames[sym], interval)
+                if not setup:
+                    continue
+                setup["capCategory"] = category or "speculative"
+                setup["variancePct"] = _candle_variance_pct(setup)
+                setup["speculativeScore"] = _speculative_score(setup)
+                status, reason = _setup_status(setup, last=setup.get("last"))
+                setup["alertStatus"] = status
+                setup["alertReason"] = reason
+                setup["modelRule"] = "1m candles: rank range% + ATR% + volume pulse + VWAP/EMA alignment; remove active alert when stop invalidates."
+                rows.append(setup)
+            except Exception as e:
+                print(f"  WARN speculative setup {sym}: {e}", flush=True)
+        rows.sort(key=lambda x: (x.get("variancePct", 0), x.get("alertStatus") == "active", x.get("speculativeScore", 0)), reverse=True)
+        return rows[:limit], scan_universe
+
+    categories = {}
+    scanned_universe = []
+    for key, universe in CAP_CATEGORY_UNIVERSES.items():
+        rows, scan_universe = build_setups(universe, key)
+        categories[key] = {
+            "label": {"small": "Small Cap", "mid": "Mid Cap", "large": "Large Cap"}.get(key, key.title()),
+            "universe": scan_universe,
+            "results": rows,
+        }
+        scanned_universe.extend(scan_universe)
+
+    top = []
+    for key in ("small", "mid", "large"):
+        top.extend(categories.get(key, {}).get("results", []))
+    top.sort(key=lambda x: (x.get("variancePct", 0), x.get("alertStatus") == "active", x.get("speculativeScore", 0)), reverse=True)
 
     history = _history_load()
     if validate_history:
@@ -783,8 +822,9 @@ def fetch_speculative_daytrade(limit=5, validate_history=False):
         "generatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "interval": interval,
         "period": period,
-        "universe": universe,
+        "universe": scanned_universe,
         "results": top,
+        "categories": categories,
         "activeAlerts": active_alerts,
         "history": compact_history,
         "learningNotes": _learning_notes(history),

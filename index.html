@@ -271,6 +271,21 @@ tr:hover td{background:var(--hover);transition:.12s;}
 .dt-layout .daytrade-grid{grid-template-columns:repeat(2,minmax(0,1fr));}
 .dt-core-grid{grid-template-columns:repeat(3,minmax(0,1fr));}
 .dt-layout .dt-core-grid{grid-template-columns:repeat(3,minmax(0,1fr));}
+.cap-lanes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding:14px;}
+.cap-lane{background:var(--card2);border:1px solid var(--border);border-radius:8px;overflow:hidden;min-width:0;}
+.cap-lane-hdr{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;padding:10px 11px;border-bottom:1px solid var(--border);background:rgba(88,166,255,.06);}
+.cap-lane-title{font-size:12px;font-weight:900;color:var(--text);}
+.cap-lane-sub{font-size:9px;color:var(--muted);margin-top:2px;line-height:1.35;}
+.cap-table{width:100%;font-size:10px;}
+.cap-table th{font-size:8px;padding:6px 7px;}
+.cap-table td{font-size:10px;padding:7px;border-bottom:1px solid var(--border);}
+.cap-table tr:last-child td{border-bottom:none;}
+.cap-symbol{font-size:13px;font-weight:900;color:var(--blue);}
+.cap-rank{color:var(--muted);font-size:9px;font-weight:800;margin-right:5px;}
+.cap-setup{font-size:9px;color:var(--muted);margin-top:2px;line-height:1.35;}
+.cap-levels{display:grid;gap:2px;color:var(--muted);line-height:1.35;}
+.cap-levels strong{color:var(--text);}
+.cap-var{font-weight:900;color:var(--yellow);}
 .dt-card{background:var(--card2);border:1px solid var(--border);border-radius:8px;overflow:hidden;}
 .dt-hdr{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;padding:12px 14px;border-bottom:1px solid var(--border);}
 .dt-sym{font-size:18px;font-weight:900;color:var(--blue);}
@@ -308,9 +323,9 @@ tr:hover td{background:var(--hover);transition:.12s;}
 .alert-invalid{background:rgba(248,81,73,.16);color:var(--red);}
 .learning-list{display:grid;gap:7px;color:var(--muted);font-size:11px;line-height:1.45;}
 .history-line{font-size:11px;color:var(--muted);line-height:1.45;border-top:1px solid var(--border);padding-top:7px;margin-top:7px;}
-@media(max-width:1200px){.dt-layout{grid-template-columns:1fr;}.dt-kpis{grid-template-columns:repeat(2,1fr);}.dt-layout .daytrade-grid,.dt-core-grid{grid-template-columns:1fr 1fr;}}
+@media(max-width:1200px){.dt-layout{grid-template-columns:1fr;}.dt-kpis{grid-template-columns:repeat(2,1fr);}.dt-layout .daytrade-grid,.dt-core-grid{grid-template-columns:1fr 1fr;}.cap-lanes{grid-template-columns:1fr;}}
 @media(max-width:1100px){.daytrade-grid{grid-template-columns:1fr 1fr;}}
-@media(max-width:750px){.dt-command-top{display:block;}.dt-command-meta{justify-items:start;margin-top:8px;}.dt-readonly,.dt-refresh{white-space:normal;}.dt-kpis,.daytrade-grid,.alert-panel,.dt-layout .daytrade-grid,.dt-core-grid{grid-template-columns:1fr;padding:10px;}.dt-command{padding:12px;}.dt-panel-hdr{display:block;}}
+@media(max-width:750px){.dt-command-top{display:block;}.dt-command-meta{justify-items:start;margin-top:8px;}.dt-readonly,.dt-refresh{white-space:normal;}.dt-kpis,.daytrade-grid,.alert-panel,.dt-layout .daytrade-grid,.dt-core-grid,.cap-lanes{grid-template-columns:1fr;padding:10px;}.dt-command{padding:12px;}.dt-panel-hdr{display:block;}}
 
 /* SPARKLINE */
 .spark{display:inline-block;vertical-align:middle;}
@@ -648,13 +663,13 @@ tr:hover td{background:var(--hover);transition:.12s;}
       <section class="dt-panel">
         <div class="dt-panel-hdr">
           <div>
-            <div class="dt-panel-title">Top 5 Speculative 1-Min Candle Alerts</div>
-            <div class="dt-panel-sub">Ranks volatile names by 1-minute candle range, ATR, volume pulse, VWAP and EMA alignment.</div>
+            <div class="dt-panel-title">Top 5 1-Min Candle Variance by Market-Cap Lane</div>
+            <div class="dt-panel-sub">Small, mid, and large-cap scan pools ranked minute-by-minute by intraday range variance, ATR, volume pulse, VWAP and EMA alignment.</div>
           </div>
           <span style="font-size:10px;color:var(--muted);">Invalid setups are removed from active alerts</span>
         </div>
-        <div id="spec-daytrade-grid" class="daytrade-grid">
-          <div class="dt-empty"><span class="spinner"></span>Scanning top speculative candle alerts…</div>
+        <div id="spec-daytrade-grid" class="cap-lanes">
+          <div class="dt-empty"><span class="spinner"></span>Scanning small, mid, and large-cap candle variance…</div>
         </div>
         <div class="sources-bar">
           <span style="font-size:9px;color:var(--muted);font-weight:700;margin-right:4px;">STRICT FILTER:</span>
@@ -1308,37 +1323,45 @@ function renderSpeculativeDayTrade(){
   const learning = document.getElementById('spec-learning-list');
   const historyLine = document.getElementById('spec-history-line');
   const rows = SPEC_DAYTRADE?.results || [];
+  const categories = SPEC_DAYTRADE?.categories || {};
   if (!grid) return;
-  if (!rows.length) {
-    grid.innerHTML = '<div class="dt-empty">Speculative 1-minute scanner unavailable — refresh to retry.</div>';
+  if (!rows.length && !Object.keys(categories).length) {
+    grid.innerHTML = '<div class="dt-empty">Market-cap lane scanner unavailable — refresh to retry.</div>';
     if (alerts) alerts.innerHTML = '<div class="dt-empty" style="padding:8px;">No active alerts.</div>';
     return;
   }
-  grid.innerHTML = rows.map(r => {
-    const why = (r.why || []).slice(0, 2).join(' · ');
-    return `<div class="dt-card">
-      <div class="dt-hdr">
+  const laneOrder = ['small','mid','large'];
+  grid.innerHTML = laneOrder.map(key => {
+    const lane = categories[key] || { label: key.toUpperCase(), results: [] };
+    const laneRows = lane.results || [];
+    const body = laneRows.length ? laneRows.map((r, idx) => `
+      <tr>
+        <td>
+          <div><span class="cap-rank">#${idx + 1}</span><span class="cap-symbol">${r.symbol}</span></div>
+          <div class="cap-setup">${r.bias} · ${r.setup || '1m candle setup'} · ${fmtPT(r.signalTimePST)}</div>
+        </td>
+        <td><span class="cap-var">${fmt(r.variancePct,2)}%</span><div class="cap-setup">Vol ${fmt(r.volumeRatio,1)}x</div></td>
+        <td>
+          <div class="cap-levels">
+            <span>E <strong>${fmtP(r.entryValue)}</strong></span>
+            <span>X <strong>${fmtP(r.exitValue)}</strong></span>
+            <span>S <strong>${fmtP(r.stopLoss)}</strong></span>
+          </div>
+        </td>
+        <td><span class="alert-state ${statusCls(r.alertStatus)}">${r.alertStatus || 'active'}</span></td>
+      </tr>`).join('') : '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:16px;">No clean setups in this lane.</td></tr>';
+    return `<div class="cap-lane">
+      <div class="cap-lane-hdr">
         <div>
-          <div class="dt-sym">${r.symbol} <span class="setup-score">${fmt(r.speculativeScore,0)}</span></div>
-          <div style="color:var(--muted);font-size:11px;">${r.setup} · ${r.interval} candles · Last ${fmtP(r.last)}</div>
+          <div class="cap-lane-title">${lane.label || key.toUpperCase()}</div>
+          <div class="cap-lane-sub">Top ${laneRows.length || 0} by 1-min day variance</div>
         </div>
-        <span class="dt-bias ${dtBiasCls(r.bias)}">${r.bias}</span>
+        <span class="setup-score">${(lane.universe || []).length} scanned</span>
       </div>
-      <div class="dt-chart">${renderMiniCandles(r.candles, r.entryValue, r.exitValue, r.stopLoss)}</div>
-      <div class="dt-body">
-        <div class="dt-levels">
-          <div class="dt-level"><span>Entry</span><strong class="tv-bl">${fmtP(r.entryValue)}</strong><div style="font-size:10px;color:var(--muted);margin-top:3px;">${fmtPT(r.entryTimePST || r.signalTimePST)}</div></div>
-          <div class="dt-level"><span>Day Exit</span><strong class="tv-up">${fmtP(r.exitValue)}</strong><div style="font-size:10px;color:var(--muted);margin-top:3px;">${fmtPT(r.exitTimePST)}</div></div>
-          <div class="dt-level"><span>Invalid</span><strong class="tv-dn">${fmtP(r.stopLoss)}</strong><div style="font-size:10px;color:var(--muted);margin-top:3px;">${fmtPT(r.invalidTimePST)}</div></div>
-        </div>
-        <div class="dt-meta">
-          <div>VWAP<strong>${fmtP(r.vwap)}</strong></div>
-          <div>Vol Pulse<strong>${fmt(r.volumeRatio,1)}x</strong></div>
-          <div>ATR<strong>${fmtP(r.atr)}</strong></div>
-          <div>Status<strong>${r.alertStatus || 'active'}</strong></div>
-        </div>
-        <div class="dt-why"><strong style="color:var(--text);">${r.tradeRating}</strong> · ${why}<br><span style="color:var(--yellow);">${r.modelRule || r.exitRule}</span></div>
-      </div>
+      <table class="cap-table">
+        <thead><tr><th>Stock</th><th>Variance</th><th>Plan</th><th>Status</th></tr></thead>
+        <tbody>${body}</tbody>
+      </table>
     </div>`;
   }).join('');
 
