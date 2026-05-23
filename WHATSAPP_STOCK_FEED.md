@@ -29,6 +29,32 @@ python3 scripts/whatsapp_stock_feed.py \
   --input "/path/to/WhatsApp Chat - BuyAlertsContrbutingAndPaidMembers.zip"
 ```
 
+## Auto Mode
+
+WhatsApp does not provide a safe personal-chat API for direct background downloads. The supported local automation is:
+
+1. Keep this watcher running.
+2. Export the group chat to `~/Downloads`.
+3. The watcher auto-detects the new WhatsApp export zip and feeds it into Advisor.
+
+```bash
+cd /Users/rajamac/myprojects/edge-advisor
+python3 scripts/whatsapp_stock_feed_auto.py
+```
+
+To scan once and exit:
+
+```bash
+python3 scripts/whatsapp_stock_feed_auto.py --once
+```
+
+To watch a custom folder:
+
+```bash
+python3 scripts/whatsapp_stock_feed_auto.py \
+  --watch "/Users/rajamac/Downloads"
+```
+
 Default output:
 
 ```text
