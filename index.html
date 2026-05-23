@@ -74,6 +74,11 @@ header{background:rgba(255,255,255,.92);border-bottom:1px solid var(--border);pa
 
 /* LAYOUT */
 .main{padding:16px 20px;display:grid;gap:16px;}
+.dashboard-tabs{display:flex;gap:8px;align-items:center;border-bottom:1px solid var(--border);padding-bottom:10px;position:sticky;top:0;z-index:80;background:var(--bg);}
+.dash-tab{background:var(--card2);border:1px solid var(--border);color:var(--muted);border-radius:6px;padding:8px 12px;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.8px;cursor:pointer;}
+.dash-tab:hover{border-color:var(--accent);color:var(--text);}
+.dash-tab.active{background:var(--accent);border-color:var(--accent);color:#fff;}
+.tab-note{margin-left:auto;color:var(--muted);font-size:11px;}
 .sec-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);margin-bottom:10px;display:flex;align-items:center;gap:8px;}
 .sec-title::after{content:'';flex:1;height:1px;background:var(--border);}
 .card{background:var(--card);border:1px solid var(--border);border-radius:8px;overflow:hidden;box-shadow:var(--shadow);}
@@ -233,6 +238,45 @@ tr:hover td{background:var(--hover);transition:.12s;}
 @media(max-width:1100px){.setups-grid{grid-template-columns:repeat(2,1fr);}}
 @media(max-width:750px){.setups-grid{grid-template-columns:1fr;padding:10px;gap:10px;}}
 
+/* INTRADAY DAY TRADE SKILL */
+.daytrade-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;padding:14px;}
+.dt-card{background:var(--card2);border:1px solid var(--border);border-radius:8px;overflow:hidden;}
+.dt-hdr{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;padding:12px 14px;border-bottom:1px solid var(--border);}
+.dt-sym{font-size:18px;font-weight:900;color:var(--blue);}
+.dt-bias{font-size:10px;font-weight:900;padding:3px 8px;border-radius:999px;text-transform:uppercase;}
+.dt-long{background:rgba(63,185,80,.16);color:var(--green);}
+.dt-short{background:rgba(248,81,73,.16);color:var(--red);}
+.dt-wait{background:rgba(210,153,34,.16);color:var(--yellow);}
+.dt-chart{height:104px;padding:10px 12px;border-bottom:1px solid var(--border);background:rgba(23,105,170,.04);}
+.dt-body{padding:11px 14px;display:grid;gap:8px;}
+.dt-levels{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;}
+.dt-level{background:var(--card);border:1px solid var(--border);border-radius:6px;padding:8px;}
+.dt-level span{display:block;font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;font-weight:800;margin-bottom:3px;}
+.dt-level strong{font-size:14px;}
+.dt-meta{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;}
+.dt-meta div{font-size:10px;color:var(--muted);background:rgba(23,105,170,.05);border-radius:5px;padding:6px;}
+.dt-meta strong{display:block;color:var(--text);font-size:11px;margin-top:2px;}
+.dt-why{font-size:11px;color:var(--muted);line-height:1.45;border-top:1px solid var(--border);padding-top:8px;}
+.dt-empty{grid-column:1/-1;padding:18px;text-align:center;color:var(--muted);font-size:12px;}
+.candle-wick{stroke:var(--muted);stroke-width:1;}
+.candle-up{fill:var(--green);stroke:var(--green);}
+.candle-dn{fill:var(--red);stroke:var(--red);}
+.candle-line{stroke:var(--blue);stroke-width:1;stroke-dasharray:3 3;opacity:.8;}
+.alert-panel{padding:14px;display:grid;grid-template-columns:1fr 1fr;gap:12px;border-top:1px solid var(--border);}
+.alert-box{background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:11px 13px;}
+.alert-title{font-size:10px;font-weight:900;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;}
+.alert-list{display:grid;gap:7px;}
+.alert-row{display:grid;grid-template-columns:54px 1fr auto;gap:8px;align-items:center;background:var(--card);border:1px solid var(--border);border-radius:6px;padding:8px;font-size:11px;}
+.alert-sym{font-weight:900;color:var(--blue);font-size:13px;}
+.alert-state{font-size:9px;font-weight:900;text-transform:uppercase;border-radius:999px;padding:3px 7px;}
+.alert-active{background:rgba(63,185,80,.16);color:var(--green);}
+.alert-watch{background:rgba(210,153,34,.16);color:var(--yellow);}
+.alert-invalid{background:rgba(248,81,73,.16);color:var(--red);}
+.learning-list{display:grid;gap:7px;color:var(--muted);font-size:11px;line-height:1.45;}
+.history-line{font-size:11px;color:var(--muted);line-height:1.45;border-top:1px solid var(--border);padding-top:7px;margin-top:7px;}
+@media(max-width:1100px){.daytrade-grid{grid-template-columns:1fr 1fr;}}
+@media(max-width:750px){.daytrade-grid,.alert-panel{grid-template-columns:1fr;padding:10px;}}
+
 /* SPARKLINE */
 .spark{display:inline-block;vertical-align:middle;}
 .spark-band{fill:rgba(88,166,255,.12);}
@@ -367,7 +411,7 @@ tr:hover td{background:var(--hover);transition:.12s;}
 
 <!-- HEADER -->
 <header>
-  <div class="logo">Nanda<span>Edge</span> Advisor <sub>v3.5</sub></div>
+  <div class="logo">Nanda<span>Edge</span> Advisor <sub>v3.6</sub></div>
   <div class="header-right">
     <div class="market-status">
       <div class="dot dot-green" id="mkt-dot"></div>
@@ -401,7 +445,7 @@ tr:hover td{background:var(--hover);transition:.12s;}
       </div>
     </div>
     <div style="color:var(--muted);font-size:11px;" id="clock"></div>
-    <button onclick="refresh()" style="background:var(--accent);border:none;color:#fff;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:11px;font-weight:700;">↺ Refresh</button>
+    <button onclick="refreshActiveView()" style="background:var(--accent);border:none;color:#fff;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:11px;font-weight:700;">↺ Refresh</button>
   </div>
 </header>
 
@@ -455,6 +499,11 @@ tr:hover td{background:var(--hover);transition:.12s;}
 </div>
 
 <div class="main">
+  <div class="dashboard-tabs" role="tablist" aria-label="NandaEdge dashboard views">
+    <button id="tab-overview" class="dash-tab active" type="button" role="tab" aria-selected="true" data-view="overview">Overview</button>
+    <button id="tab-daytrade" class="dash-tab" type="button" role="tab" aria-selected="false" data-view="daytrade">Day Trade</button>
+    <div class="tab-note" id="tab-note">Day-trade candles load only when the Day Trade tab is opened.</div>
+  </div>
 
 <!-- MACRO REGIME -->
 <div>
@@ -528,6 +577,61 @@ tr:hover td{background:var(--hover);transition:.12s;}
     </div>
     <div id="setups-grid" class="setups-grid">
       <div class="setup-empty">Loading setups…</div>
+    </div>
+  </div>
+</div>
+
+<!-- INTRADAY DAY TRADE SKILL -->
+<div class="daytrade-section" style="display:none;">
+  <div class="sec-title">Intraday Candle Day-Trade Skill — NVDA, AMD, IONQ</div>
+  <div class="card">
+    <div class="card-hdr">
+      <span>5-minute Yahoo candles with VWAP, EMA9/20, ATR entry, exit, and stop levels</span>
+      <span style="font-size:10px;color:var(--muted);">Read-only analysis · not trade execution</span>
+    </div>
+    <div id="daytrade-grid" class="daytrade-grid">
+      <div class="dt-empty"><span class="spinner"></span>Loading candle-based day-trade levels…</div>
+    </div>
+    <div class="sources-bar">
+      <span style="font-size:9px;color:var(--muted);font-weight:700;margin-right:4px;">DAY TRADE DATA:</span>
+      <span class="src-tag">Yahoo Finance Candles</span>
+      <span class="src-tag">VWAP</span>
+      <span class="src-tag">EMA9 / EMA20</span>
+      <span class="src-tag">ATR Stops</span>
+    </div>
+  </div>
+</div>
+
+<!-- TOP SPECULATIVE 1-MIN ALERTS -->
+<div class="daytrade-section" style="display:none;">
+  <div class="sec-title">Top 5 Speculative 1-Min Candle Alerts — Weekly Learning History</div>
+  <div class="card">
+    <div class="card-hdr">
+      <span>Ranks volatile speculative names by 1-minute candle range, ATR, volume pulse, VWAP and EMA alignment</span>
+      <span style="font-size:10px;color:var(--muted);">Invalid alerts are removed from active list and saved to history</span>
+    </div>
+    <div id="spec-daytrade-grid" class="daytrade-grid">
+      <div class="dt-empty"><span class="spinner"></span>Scanning top speculative candle alerts…</div>
+    </div>
+    <div class="alert-panel">
+      <div class="alert-box">
+        <div class="alert-title">Alert Window — Active Entry Scripts</div>
+        <div id="spec-alert-list" class="alert-list">
+          <div class="dt-empty" style="padding:8px;">Waiting for scan…</div>
+        </div>
+      </div>
+      <div class="alert-box">
+        <div class="alert-title">7-Day Prediction History &amp; Learning</div>
+        <div id="spec-learning-list" class="learning-list"></div>
+        <div id="spec-history-line" class="history-line">History starts after the first scan.</div>
+      </div>
+    </div>
+    <div class="sources-bar">
+      <span style="font-size:9px;color:var(--muted);font-weight:700;margin-right:4px;">STRICT FILTER:</span>
+      <span class="src-tag">1-Min Yahoo Candles</span>
+      <span class="src-tag">Speculative Score</span>
+      <span class="src-tag">Invalidation Removal</span>
+      <span class="src-tag">7-Day Outcome Review</span>
     </div>
   </div>
 </div>
@@ -893,8 +997,14 @@ async function fetchFG()  {     try { FG   = await fetchJSON('/feargreed', 8000)
 let HIST = {};
 let OPTS = {};   // sym -> { puts: 30DTE data, calls: 30DTE data, byDte: {30,60,90} }
 let EARN = {};   // sym -> { nextDate, dte }
+let DAYTRADE = null;
+let SPEC_DAYTRADE = null;
+let ACTIVE_VIEW = 'overview';
+let DAYTRADE_LOADED = false;
 async function fetchHistory(){  try { HIST = await fetchJSON(`/history?symbols=${watchSymParam()}&days=90`, 30000) || {}; } catch(e){ HIST = {}; } }
 async function fetchEarnings(){ try { EARN = await fetchJSON(`/earnings?symbols=${watchSymParam()}`,        45000) || {}; } catch(e){ EARN = {}; } }
+async function fetchDayTrade(){ try { DAYTRADE = await fetchJSON('/daytrade?symbols=NVDA,AMD,IONQ&interval=5m&period=1d', 45000); } catch(e){ DAYTRADE = { results: [], error: e.message }; } }
+async function fetchSpecDayTrade(){ try { SPEC_DAYTRADE = await fetchJSON('/speculative-daytrade?limit=5', 70000); } catch(e){ SPEC_DAYTRADE = { results: [], activeAlerts: [], history: {days:{}}, learningNotes: [e.message] }; } }
 function fmtEarn(sym){
   const e = EARN[sym]; if (!e || !e.nextDate) return null;
   const d = e.dte;
@@ -935,6 +1045,7 @@ const gradeEl = g => `<span class="grade g${(g||'?').toLowerCase()}">${g||'?'}</
 const smartCls = s => s>=8?'sc-hi':s>=5?'sc-mid':'sc-lo';
 const fmt = (v, d=2) => v==null?'—':Number(v).toFixed(d);
 const fmtP = v => v==null?'—':'$'+Number(v).toFixed(Number(v)<20?2:Number(v)<100?1:0);
+const dtBiasCls = b => b === 'LONG' ? 'dt-long' : b === 'SHORT' ? 'dt-short' : 'dt-wait';
 const trendLabel = { strong_up:'↑ Strong Uptrend', up:'↑ Uptrend', range:'↔ Consolidation', down:'↓ Downtrend', strong_down:'↓ Strong Downtrend' };
 const trendCls   = { strong_up:'tv-up', up:'tv-up', range:'nt', down:'tv-dn', strong_down:'tv-dn' };
 const optionTradeRating = score => score >= 85 ? 'Institutional Grade'
@@ -1016,6 +1127,135 @@ function deriveOptions(t, sent, strategy){
   const d = new Date(); d.setDate(d.getDate()+30);
   const exp = d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
   return { strat, legs, exp, dte:30, delta, theta, vega };
+}
+
+function renderMiniCandles(candles, entry, exitValue, stopLoss){
+  const data = (candles || []).slice(-36).filter(c => c && isFinite(c.high) && isFinite(c.low));
+  if (!data.length) return '<div style="height:84px;display:grid;place-items:center;color:var(--muted);font-size:11px;">No candles</div>';
+  const w = 320, h = 84, pad = 6;
+  const hi = Math.max(...data.map(c => c.high), entry || 0, exitValue || 0, stopLoss || 0);
+  const lo = Math.min(...data.map(c => c.low), entry || Infinity, exitValue || Infinity, stopLoss || Infinity);
+  const span = Math.max(hi - lo, 0.01);
+  const xStep = (w - pad*2) / data.length;
+  const y = v => pad + (hi - v) / span * (h - pad*2);
+  const candleW = Math.max(3, Math.min(7, xStep * 0.56));
+  const nodes = data.map((c, i) => {
+    const x = pad + i*xStep + xStep/2;
+    const openY = y(c.open), closeY = y(c.close), highY = y(c.high), lowY = y(c.low);
+    const up = c.close >= c.open;
+    const top = Math.min(openY, closeY);
+    const bodyH = Math.max(2, Math.abs(closeY - openY));
+    return `<line class="candle-wick" x1="${x.toFixed(1)}" y1="${highY.toFixed(1)}" x2="${x.toFixed(1)}" y2="${lowY.toFixed(1)}"></line>
+      <rect class="${up ? 'candle-up' : 'candle-dn'}" x="${(x-candleW/2).toFixed(1)}" y="${top.toFixed(1)}" width="${candleW.toFixed(1)}" height="${bodyH.toFixed(1)}" rx="1"></rect>`;
+  }).join('');
+  const entryLine = entry ? `<line class="candle-line" x1="0" x2="${w}" y1="${y(entry).toFixed(1)}" y2="${y(entry).toFixed(1)}"></line>` : '';
+  const exitLine = exitValue ? `<line x1="0" x2="${w}" y1="${y(exitValue).toFixed(1)}" y2="${y(exitValue).toFixed(1)}" stroke="var(--green)" stroke-width="1" stroke-dasharray="4 3"></line>` : '';
+  const stopLine = stopLoss ? `<line x1="0" x2="${w}" y1="${y(stopLoss).toFixed(1)}" y2="${y(stopLoss).toFixed(1)}" stroke="var(--red)" stroke-width="1" stroke-dasharray="4 3"></line>` : '';
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="84" role="img" aria-label="Intraday candlestick chart">${entryLine}${exitLine}${stopLine}${nodes}</svg>`;
+}
+
+function renderDayTrade(){
+  const grid = document.getElementById('daytrade-grid');
+  const rows = DAYTRADE?.results || [];
+  if (!grid) return;
+  if (!rows.length) {
+    grid.innerHTML = '<div class="dt-empty">Day-trade candle skill unavailable — refresh to retry.</div>';
+    return;
+  }
+  grid.innerHTML = rows.map(r => {
+    if (r.error) {
+      return `<div class="dt-card"><div class="dt-hdr"><div><div class="dt-sym">${r.symbol}</div><div style="color:var(--muted);font-size:11px;">${r.error}</div></div><span class="dt-bias dt-wait">error</span></div></div>`;
+    }
+    const why = (r.why || []).slice(0, 3).join(' · ');
+    return `<div class="dt-card">
+      <div class="dt-hdr">
+        <div><div class="dt-sym">${r.symbol}</div><div style="color:var(--muted);font-size:11px;">${r.setup} · Last ${fmtP(r.last)}</div></div>
+        <span class="dt-bias ${dtBiasCls(r.bias)}">${r.bias}</span>
+      </div>
+      <div class="dt-chart">${renderMiniCandles(r.candles, r.entryValue, r.exitValue, r.stopLoss)}</div>
+      <div class="dt-body">
+        <div class="dt-levels">
+          <div class="dt-level"><span>Entry</span><strong class="tv-bl">${fmtP(r.entryValue)}</strong></div>
+          <div class="dt-level"><span>Exit</span><strong class="tv-up">${fmtP(r.exitValue)}</strong></div>
+          <div class="dt-level"><span>Stop</span><strong class="tv-dn">${fmtP(r.stopLoss)}</strong></div>
+        </div>
+        <div class="dt-meta">
+          <div>VWAP<strong>${fmtP(r.vwap)}</strong></div>
+          <div>EMA9/20<strong>${fmt(r.ema9,1)} / ${fmt(r.ema20,1)}</strong></div>
+          <div>ATR<strong>${fmtP(r.atr)}</strong></div>
+          <div>AI Conf.<strong>${r.aiConfidence}%</strong></div>
+        </div>
+        <div class="dt-why"><strong style="color:var(--text);">${r.tradeRating}</strong> · ${why}<br><span style="color:var(--yellow);">${r.exitRule}</span></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function statusCls(status){
+  if (status === 'invalid') return 'alert-invalid';
+  if (status === 'watch' || status === 'triggered') return 'alert-watch';
+  return 'alert-active';
+}
+
+function renderSpeculativeDayTrade(){
+  const grid = document.getElementById('spec-daytrade-grid');
+  const alerts = document.getElementById('spec-alert-list');
+  const learning = document.getElementById('spec-learning-list');
+  const historyLine = document.getElementById('spec-history-line');
+  const rows = SPEC_DAYTRADE?.results || [];
+  if (!grid) return;
+  if (!rows.length) {
+    grid.innerHTML = '<div class="dt-empty">Speculative 1-minute scanner unavailable — refresh to retry.</div>';
+    if (alerts) alerts.innerHTML = '<div class="dt-empty" style="padding:8px;">No active alerts.</div>';
+    return;
+  }
+  grid.innerHTML = rows.map(r => {
+    const why = (r.why || []).slice(0, 2).join(' · ');
+    return `<div class="dt-card">
+      <div class="dt-hdr">
+        <div>
+          <div class="dt-sym">${r.symbol} <span class="setup-score">${fmt(r.speculativeScore,0)}</span></div>
+          <div style="color:var(--muted);font-size:11px;">${r.setup} · ${r.interval} candles · Last ${fmtP(r.last)}</div>
+        </div>
+        <span class="dt-bias ${dtBiasCls(r.bias)}">${r.bias}</span>
+      </div>
+      <div class="dt-chart">${renderMiniCandles(r.candles, r.entryValue, r.exitValue, r.stopLoss)}</div>
+      <div class="dt-body">
+        <div class="dt-levels">
+          <div class="dt-level"><span>Entry</span><strong class="tv-bl">${fmtP(r.entryValue)}</strong></div>
+          <div class="dt-level"><span>Day Exit</span><strong class="tv-up">${fmtP(r.exitValue)}</strong></div>
+          <div class="dt-level"><span>Invalid</span><strong class="tv-dn">${fmtP(r.stopLoss)}</strong></div>
+        </div>
+        <div class="dt-meta">
+          <div>VWAP<strong>${fmtP(r.vwap)}</strong></div>
+          <div>Vol Pulse<strong>${fmt(r.volumeRatio,1)}x</strong></div>
+          <div>ATR<strong>${fmtP(r.atr)}</strong></div>
+          <div>Status<strong>${r.alertStatus || 'active'}</strong></div>
+        </div>
+        <div class="dt-why"><strong style="color:var(--text);">${r.tradeRating}</strong> · ${why}<br><span style="color:var(--yellow);">${r.modelRule || r.exitRule}</span></div>
+      </div>
+    </div>`;
+  }).join('');
+
+  const active = SPEC_DAYTRADE?.activeAlerts || [];
+  alerts.innerHTML = active.length ? active.map(r => `
+    <div class="alert-row">
+      <div class="alert-sym">${r.symbol}</div>
+      <div>
+        ${r.bias} entry <strong>${fmtP(r.entryValue)}</strong> · exit <strong>${fmtP(r.exitValue)}</strong> · invalid <strong>${fmtP(r.stopLoss)}</strong>
+        <div style="color:var(--muted);font-size:10px;margin-top:2px;">${r.alertReason || r.exitRule}</div>
+      </div>
+      <span class="alert-state ${statusCls(r.alertStatus)}">${r.alertStatus || 'active'}</span>
+    </div>`).join('') : '<div class="dt-empty" style="padding:8px;">No active alerts. Invalidated setups were removed.</div>';
+
+  learning.innerHTML = (SPEC_DAYTRADE?.learningNotes || []).map(note => `<div>• ${note}</div>`).join('');
+  const days = Object.keys(SPEC_DAYTRADE?.history?.days || {}).sort();
+  const completed = days.flatMap(d => SPEC_DAYTRADE.history.days[d].predictions || []).filter(x => x.outcome);
+  const exits = completed.filter(x => x.outcome === 'exit_hit').length;
+  const invalid = completed.filter(x => x.outcome === 'invalid').length;
+  historyLine.textContent = days.length
+    ? `${days.length} day(s) retained · ${completed.length} reviewed · ${exits} exits hit · ${invalid} invalidated`
+    : 'History starts after the first scan.';
 }
 
 // ── MARKET BAR ────────────────────────────────────────
@@ -1898,6 +2138,42 @@ function updateClock(){
   document.getElementById('clock').textContent = now.toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true})+' ET';
 }
 
+function setDashboardView(view){
+  ACTIVE_VIEW = view === 'daytrade' ? 'daytrade' : 'overview';
+  document.querySelectorAll('.dash-tab').forEach(btn => {
+    const active = btn.dataset.view === ACTIVE_VIEW;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-selected', String(active));
+  });
+  document.querySelectorAll('.main > div').forEach(section => {
+    if (section.classList.contains('dashboard-tabs')) return;
+    const isDayTrade = section.classList.contains('daytrade-section');
+    section.style.display = ACTIVE_VIEW === 'daytrade'
+      ? (isDayTrade ? '' : 'none')
+      : (isDayTrade ? 'none' : '');
+  });
+  const note = document.getElementById('tab-note');
+  if (note) {
+    note.textContent = ACTIVE_VIEW === 'daytrade'
+      ? 'Live candle tools are isolated here to protect the main dashboard and cloud memory.'
+      : 'Day-trade candles load only when the Day Trade tab is opened.';
+  }
+  if (ACTIVE_VIEW === 'daytrade') refreshDayTradeTab();
+}
+
+async function refreshDayTradeTab(force=false){
+  if (DAYTRADE_LOADED && !force) return;
+  DAYTRADE_LOADED = true;
+  await Promise.all([fetchDayTrade(), fetchSpecDayTrade()]);
+  try { renderDayTrade(); } catch(e){ console.warn('renderDayTrade', e); }
+  try { renderSpeculativeDayTrade(); } catch(e){ console.warn('renderSpeculativeDayTrade', e); }
+}
+
+function refreshActiveView(){
+  if (ACTIVE_VIEW === 'daytrade') return refreshDayTradeTab(true);
+  return refresh();
+}
+
 // ── MAIN REFRESH ──────────────────────────────────────
 async function refresh(){
   // Block only on what's needed for the first paint.
@@ -2044,6 +2320,9 @@ function bootDashboard(){
   document.getElementById('add-ticker-input').addEventListener('keydown', e => { if (e.key === 'Enter') addTickerFromInput(); });
   document.getElementById('reset-ticker-btn').addEventListener('click', resetTickers);
   document.getElementById('scan-options-btn').addEventListener('click', scanOptions);
+  document.querySelectorAll('.dash-tab').forEach(btn => {
+    btn.addEventListener('click', () => setDashboardView(btn.dataset.view));
+  });
   document.getElementById('options-toggle').addEventListener('click', () => {
     const btn = document.getElementById('options-toggle');
     const body = document.getElementById('options-body');
@@ -2054,8 +2333,12 @@ function bootDashboard(){
     body.style.display = expanded ? 'none' : '';
   });
 
+  setDashboardView('overview');
   refresh();
-  setInterval(refresh, 60000);
+  setInterval(() => {
+    if (ACTIVE_VIEW === 'daytrade') refreshDayTradeTab(true);
+    else refresh();
+  }, 60000);
 }
 
 // Wire the login form
