@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """
-NandaEdge Data Server — v3.5
+NandaEdge Data Server — v3.6
   Dashboard   → /
   Quotes      → /quotes        ?symbols=NVDA,TSLA,...   realtime quotes
+  Candles     → /candles       ?symbols=NVDA&interval=5m&period=1d intraday OHLCV
+  Day Trade   → /daytrade      ?symbols=NVDA,AMD,IONQ candle-based read-only setups
   Technicals  → /technicals    ?symbols=...             EMA/RSI/MACD/BB/ATR/VWAP
   Forecast    → /forecast      ?symbols=...             GBM projections (1w..5y)
   Fear/Greed  → /feargreed                              CNN proxy
@@ -14,6 +16,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, urlencode
 
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
+DAYTRADE_HISTORY_FILE = os.path.join(BASE_DIR, "daytrade_history.json")
 
 def _load_dotenv(path=None):
     """Tiny local .env loader; real env vars win and secrets are never logged."""
@@ -93,6 +96,16 @@ TRADIER_ACCESS_TOKEN = (os.environ.get("TRADIER_ACCESS_TOKEN", "") or "").strip(
 TRADIER_BASE_URL     = (os.environ.get("TRADIER_BASE_URL", "https://api.tradier.com") or "").rstrip("/")
 
 WATCH = ["NVDA","TSLA","PLTR","AMD","MU","CRWD","INTC","IONQ","RGTI"]
+SPECULATIVE_UNIVERSE = [
+    "NVDA","AMD","IONQ","RGTI","PLTR","TSLA","MU","SMCI",
+    "COIN","MARA","RIOT","SOUN","AI","QBTS","RKLB","SOFI"
+]
+# Keep cloud memory stable. The full speculative universe can be expanded
+# later, but normal dashboard refreshes should not batch-load every hot ticker.
+SPECULATIVE_SCAN_LIMIT = int(os.environ.get("SPECULATIVE_SCAN_LIMIT", "8") or "8")
+DAYTRADE_HISTORY_DAYS = int(os.environ.get("DAYTRADE_HISTORY_DAYS", "7") or "7")
+CANDLE_RESPONSE_LIMIT = int(os.environ.get("CANDLE_RESPONSE_LIMIT", "120") or "120")
+DAYTRADE_CHART_LIMIT = int(os.environ.get("DAYTRADE_CHART_LIMIT", "32") or "32")
 MARKETS = [
     "^GSPC","^IXIC","^DJI","^RUT","^VIX","^TNX",
     "DX-Y.NYB","CL=F","GC=F","BTC-USD","ETH-USD",
@@ -117,6 +130,8 @@ _tech_cache  = {}                     # sym -> {"t": float, "data": dict}
 _fcst_cache  = {}                     # sym -> {"t": float, "data": dict}
 _opts_cache  = {}                     # (sym, type) -> {"t": float, "data": list}
 _hist_cache  = {}                     # (sym, days) -> {"t": float, "data": list}
+_candle_cache= {}                     # (symbols, interval, period) -> {"t": float, "data": dict}
+_daytrade_cache = {}                  # (symbols, interval, period) -> {"t": float, "data": dict}
 _earn_cache  = {}                     # sym -> {"t": float, "data": dict}
 _rate_cache  = {"t": 0, "rate": 0.045}  # risk-free rate from ^TNX
 _fg_cache    = {"t": 0, "data": None}
@@ -124,6 +139,8 @@ TECH_TTL = 300                        # 5 min
 FCST_TTL = 3600                       # 1 hour — forecasts don't need to update often
 OPTS_TTL = 600                        # 10 min — options chains move fast but pulling is expensive
 HIST_TTL = 1800                       # 30 min — daily closes don't change intraday
+CANDLE_TTL = 45                       # short TTL for intraday candles
+DAYTRADE_TTL = 60                     # day-trade plans refresh with live candle reads
 EARN_TTL = 86400                      # 24 hr — earnings dates rarely change intraday
 RATE_TTL = 3600                       # 1 hour for risk-free rate
 FG_TTL   = 600                        # 10 min
@@ -263,6 +280,455 @@ def fetch_quotes(syms=None):
         except Exception as e:
             print(f"  WARN quote {sym}: {e}", flush=True)
     return {"quoteResponse": {"result": results, "error": None}}
+
+# ── Intraday candles + read-only day-trade setups ───────
+def _safe_float(v, default=None):
+    try:
+        if v is None:
+            return default
+        if hasattr(v, "item"):
+            v = v.item()
+        if isinstance(v, float) and math.isnan(v):
+            return default
+        return float(v)
+    except Exception:
+        return default
+
+
+def _trim_cache(cache, limit):
+    """Keep short-lived in-memory caches from growing on cloud instances."""
+    if len(cache) <= limit:
+        return
+    stale = sorted(cache.items(), key=lambda item: item[1].get("t", 0))
+    for key, _ in stale[:max(0, len(cache) - limit)]:
+        cache.pop(key, None)
+
+
+def _fetch_intraday_frames(syms, interval="5m", period="1d"):
+    import yfinance as yf
+    import pandas as pd
+
+    symbols = [s for s in syms if _SYM_RE.match(s)]
+    if not symbols:
+        return {}
+    try:
+        df = yf.download(" ".join(symbols), period=period, interval=interval,
+                         group_by="ticker", threads=False, progress=False,
+                         auto_adjust=False, prepost=False)
+    except Exception as e:
+        print(f"  WARN candles batch fallback: {e}", flush=True)
+        df = None
+    frames = {}
+    if df is not None:
+        for sym in symbols:
+            try:
+                if isinstance(df.columns, pd.MultiIndex):
+                    d = df[sym].dropna()
+                else:
+                    d = df.dropna()
+                if d.empty:
+                    continue
+                frames[sym] = d
+            except Exception as e:
+                print(f"  WARN candles frame {sym}: {e}", flush=True)
+    missing = [sym for sym in symbols if sym not in frames]
+    for sym in missing:
+        try:
+            d = yf.download(sym, period=period, interval=interval,
+                            group_by="ticker", threads=False, progress=False,
+                            auto_adjust=False, prepost=False).dropna()
+            if not d.empty:
+                frames[sym] = d
+        except Exception as e:
+            print(f"  WARN candles single {sym}: {e}", flush=True)
+    return frames
+
+
+def fetch_candles(syms=None, interval="5m", period="1d"):
+    syms = syms or ["NVDA", "AMD", "IONQ"]
+    interval = interval if interval in {"1m","2m","5m","15m","30m","60m","1h","1d"} else "5m"
+    period = period if period in {"1d","5d","1mo","3mo","6mo","1y"} else "1d"
+    key = (",".join(syms), interval, period)
+    now = time.time()
+    c = _candle_cache.get(key)
+    if c and now - c["t"] < CANDLE_TTL:
+        return c["data"]
+
+    frames = _fetch_intraday_frames(syms, interval, period)
+    out = {}
+    for sym, d in frames.items():
+        candles = []
+        for ts, row in d.tail(CANDLE_RESPONSE_LIMIT).iterrows():
+            candles.append({
+                "time": str(ts),
+                "open": round(_safe_float(row.get("Open"), 0), 4),
+                "high": round(_safe_float(row.get("High"), 0), 4),
+                "low": round(_safe_float(row.get("Low"), 0), 4),
+                "close": round(_safe_float(row.get("Close"), 0), 4),
+                "volume": int(_safe_float(row.get("Volume"), 0) or 0),
+            })
+        out[sym] = {"symbol": sym, "interval": interval, "period": period, "candles": candles}
+    _candle_cache[key] = {"t": now, "data": out}
+    _trim_cache(_candle_cache, 12)
+    return out
+
+
+def _daytrade_for_frame(sym, d, interval):
+    import pandas as pd
+
+    d = d.dropna().copy()
+    if len(d) < 20:
+        return None
+    close = d["Close"].astype(float)
+    high = d["High"].astype(float)
+    low = d["Low"].astype(float)
+    open_ = d["Open"].astype(float)
+    vol = d["Volume"].astype(float)
+    last = float(close.iloc[-1])
+    day_open = float(open_.iloc[0])
+    day_high = float(high.max())
+    day_low = float(low.min())
+    ema9 = float(close.ewm(span=9, adjust=False).mean().iloc[-1])
+    ema20 = float(close.ewm(span=20, adjust=False).mean().iloc[-1])
+    typical = (high + low + close) / 3
+    vwap = float((typical * vol).cumsum().iloc[-1] / max(vol.cumsum().iloc[-1], 1))
+    prev_c = close.shift(1)
+    tr = pd.concat([high-low, (high-prev_c).abs(), (low-prev_c).abs()], axis=1).max(axis=1)
+    atr = float(tr.tail(14).mean()) if len(tr.dropna()) >= 14 else max(day_high - day_low, last * 0.01)
+    atr = max(atr, last * 0.003)
+    vol_avg = float(vol.tail(20).mean()) if len(vol) >= 20 else float(vol.mean())
+    vol_now = float(vol.tail(3).mean())
+    vol_ratio = vol_now / vol_avg if vol_avg else 1.0
+
+    bullish = last > vwap and ema9 >= ema20 and last >= day_open
+    bearish = last < vwap and ema9 < ema20 and last < day_open
+    if bullish:
+        bias = "LONG"
+        setup = "VWAP pullback / breakout continuation"
+        entry = max(last, vwap + 0.10 * atr)
+        stop = min(vwap - 0.45 * atr, entry - 1.15 * atr)
+        risk = max(entry - stop, 0.01)
+        exit_value = entry + 1.6 * risk
+        target2 = entry + 2.4 * risk
+    elif bearish:
+        bias = "SHORT"
+        setup = "VWAP rejection / downside continuation"
+        entry = min(last, vwap - 0.10 * atr)
+        stop = max(vwap + 0.45 * atr, entry + 1.15 * atr)
+        risk = max(stop - entry, 0.01)
+        exit_value = entry - 1.6 * risk
+        target2 = entry - 2.4 * risk
+    else:
+        bias = "WAIT"
+        setup = "No clean candle edge"
+        entry = max(day_high + 0.10 * atr, last + 0.35 * atr)
+        stop = max(day_low, last - 1.10 * atr)
+        risk = max(entry - stop, 0.01)
+        exit_value = entry + 1.35 * risk
+        target2 = entry + 2.0 * risk
+
+    score = 50
+    if last > vwap: score += 10
+    if ema9 > ema20: score += 10
+    if vol_ratio >= 1.2: score += 10
+    if abs(last - vwap) / max(last, 1) < 0.018: score += 6
+    if day_high > day_low: score += 4
+    if bias == "WAIT": score = min(score, 58)
+    confidence = max(35, min(92, round(score)))
+    trade_rating_value = trade_rating(confidence)
+    why = []
+    why.append("Price is above intraday VWAP" if last > vwap else "Price is below intraday VWAP")
+    why.append("EMA9 is above EMA20" if ema9 > ema20 else "EMA9 is below EMA20")
+    why.append(f"Volume pulse {vol_ratio:.1f}x recent candle average")
+    why.append("Entry/exit are derived from VWAP, ATR, and intraday trend state")
+
+    candles = []
+    for ts, row in d.tail(DAYTRADE_CHART_LIMIT).iterrows():
+        candles.append({
+            "time": str(ts),
+            "open": round(_safe_float(row.get("Open"), 0), 4),
+            "high": round(_safe_float(row.get("High"), 0), 4),
+            "low": round(_safe_float(row.get("Low"), 0), 4),
+            "close": round(_safe_float(row.get("Close"), 0), 4),
+            "volume": int(_safe_float(row.get("Volume"), 0) or 0),
+        })
+
+    return {
+        "symbol": sym,
+        "interval": interval,
+        "last": round(last, 2),
+        "bias": bias,
+        "setup": setup,
+        "entryValue": round(entry, 2),
+        "exitValue": round(exit_value, 2),
+        "target2": round(target2, 2),
+        "stopLoss": round(stop, 2),
+        "riskPerShare": round(risk, 2),
+        "vwap": round(vwap, 2),
+        "ema9": round(ema9, 2),
+        "ema20": round(ema20, 2),
+        "atr": round(atr, 2),
+        "dayHigh": round(day_high, 2),
+        "dayLow": round(day_low, 2),
+        "volumeRatio": round(vol_ratio, 2),
+        "aiConfidence": confidence,
+        "tradeRating": trade_rating_value,
+        "exitRule": "Take partial profits at exit value; trail remainder near EMA9/VWAP; exit immediately if stop-loss breaks.",
+        "why": why,
+        "candles": candles,
+    }
+
+
+def fetch_daytrade(syms=None, interval="5m", period="1d"):
+    syms = syms or ["NVDA", "AMD", "IONQ"]
+    interval = interval if interval in {"1m","2m","5m","15m","30m","60m","1h"} else "5m"
+    period = period if period in {"1d","5d"} else "1d"
+    key = (",".join(syms), interval, period)
+    now = time.time()
+    c = _daytrade_cache.get(key)
+    if c and now - c["t"] < DAYTRADE_TTL:
+        return c["data"]
+
+    frames = _fetch_intraday_frames(syms, interval, period)
+    results = []
+    for sym in syms:
+        try:
+            item = _daytrade_for_frame(sym, frames.get(sym), interval) if sym in frames else None
+            if item:
+                results.append(item)
+        except Exception as e:
+            print(f"  WARN daytrade {sym}: {e}", flush=True)
+            results.append({"symbol": sym, "error": str(e)})
+    data = {
+        "symbols": syms,
+        "interval": interval,
+        "period": period,
+        "generatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "disclaimer": "Read-only educational day-trade analysis from intraday candles. Not financial advice and not an order instruction.",
+        "results": results,
+    }
+    _daytrade_cache[key] = {"t": now, "data": data}
+    _trim_cache(_daytrade_cache, 8)
+    return data
+
+
+def _history_load():
+    try:
+        with open(DAYTRADE_HISTORY_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data if isinstance(data, dict) else {"days": {}}
+    except Exception:
+        return {"days": {}}
+
+
+def _history_save(data):
+    try:
+        days = data.setdefault("days", {})
+        cutoff = date.today() - timedelta(days=DAYTRADE_HISTORY_DAYS)
+        for k in list(days.keys()):
+            try:
+                if date.fromisoformat(k) < cutoff:
+                    del days[k]
+            except Exception:
+                del days[k]
+        for day_payload in days.values():
+            day_payload["predictions"] = [
+                _compact_setup(p) for p in day_payload.get("predictions", [])
+            ]
+        with open(DAYTRADE_HISTORY_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        print(f"  WARN daytrade history save: {e}", flush=True)
+
+
+def _compact_setup(setup, keep_candles=False):
+    """Persist only the decision fields; candle arrays stay response-only."""
+    fields = [
+        "symbol", "interval", "last", "bias", "setup", "entryValue", "exitValue",
+        "target2", "stopLoss", "riskPerShare", "vwap", "ema9", "ema20", "atr",
+        "dayHigh", "dayLow", "volumeRatio", "aiConfidence", "tradeRating",
+        "exitRule", "why", "speculativeScore", "alertStatus", "alertReason",
+        "modelRule", "outcome", "outcomeReason", "realized", "whatWentWrong",
+    ]
+    compact = {k: setup[k] for k in fields if k in setup}
+    if keep_candles and "candles" in setup:
+        compact["candles"] = setup["candles"]
+    return compact
+
+
+def _compact_history(history):
+    compact = {"days": {}}
+    for day_key, payload in history.get("days", {}).items():
+        compact["days"][day_key] = {
+            "generatedAt": payload.get("generatedAt"),
+            "method": payload.get("method"),
+            "predictions": [_compact_setup(p) for p in payload.get("predictions", [])],
+        }
+    return compact
+
+
+def _setup_status(setup, last=None, high=None, low=None):
+    bias = setup.get("bias")
+    entry = _safe_float(setup.get("entryValue"))
+    exit_value = _safe_float(setup.get("exitValue"))
+    stop = _safe_float(setup.get("stopLoss"))
+    if bias == "LONG":
+        if high is not None and exit_value is not None and high >= exit_value:
+            return "exit_hit", "Exit target reached"
+        if low is not None and stop is not None and low <= stop:
+            return "invalid", "Stop-loss invalidated setup"
+        if last is not None and stop is not None and last <= stop:
+            return "invalid", "Current price broke stop-loss"
+        return "active", "Waiting for entry/exit confirmation"
+    if bias == "SHORT":
+        if low is not None and exit_value is not None and low <= exit_value:
+            return "exit_hit", "Exit target reached"
+        if high is not None and stop is not None and high >= stop:
+            return "invalid", "Stop-loss invalidated setup"
+        if last is not None and stop is not None and last >= stop:
+            return "invalid", "Current price broke stop-loss"
+        return "active", "Waiting for entry/exit confirmation"
+    if entry is not None and high is not None and high >= entry:
+        return "triggered", "Breakout entry triggered"
+    if stop is not None and low is not None and low <= stop:
+        return "invalid", "Setup invalidated before entry"
+    return "watch", "No clean entry yet"
+
+
+def _speculative_score(setup):
+    last = _safe_float(setup.get("last"), 0) or 0
+    day_high = _safe_float(setup.get("dayHigh"), last) or last
+    day_low = _safe_float(setup.get("dayLow"), last) or last
+    atr = _safe_float(setup.get("atr"), 0) or 0
+    vol_ratio = _safe_float(setup.get("volumeRatio"), 1) or 1
+    confidence = _safe_float(setup.get("aiConfidence"), 0) or 0
+    range_pct = ((day_high - day_low) / max(last, 1)) * 100
+    atr_pct = (atr / max(last, 1)) * 100
+    bias_bonus = 8 if setup.get("bias") in ("LONG", "SHORT") else 0
+    return round(range_pct * 2.2 + atr_pct * 4.0 + min(vol_ratio, 5) * 8 + confidence * 0.35 + bias_bonus, 2)
+
+
+def _realized_for_symbol(frames, sym, day_key):
+    d = frames.get(sym)
+    if d is None or d.empty:
+        return None
+    try:
+        rows = d[d.index.strftime("%Y-%m-%d") == day_key]
+        if rows.empty:
+            return None
+        return {
+            "high": round(float(rows["High"].max()), 4),
+            "low": round(float(rows["Low"].min()), 4),
+            "close": round(float(rows["Close"].iloc[-1]), 4),
+            "candles": int(len(rows)),
+        }
+    except Exception:
+        return None
+
+
+def _update_prediction_history(history, today_key, frames_5d):
+    days = history.setdefault("days", {})
+    for day_key, day_payload in list(days.items()):
+        if day_key >= today_key:
+            continue
+        for setup in day_payload.get("predictions", []):
+            if setup.get("outcome") in ("exit_hit", "invalid", "triggered"):
+                continue
+            realized = _realized_for_symbol(frames_5d, setup.get("symbol", ""), day_key)
+            if not realized:
+                continue
+            status, reason = _setup_status(setup, high=realized["high"], low=realized["low"])
+            setup["outcome"] = status
+            setup["outcomeReason"] = reason
+            setup["realized"] = realized
+            setup["whatWentWrong"] = _what_went_wrong(setup, status, realized)
+    return history
+
+
+def _what_went_wrong(setup, status, realized):
+    if status == "exit_hit":
+        return "Worked: price reached planned exit before invalidation."
+    if status == "invalid":
+        bias = setup.get("bias")
+        if bias == "LONG":
+            return "Failed: candle low breached stop; require stronger VWAP hold and volume confirmation next run."
+        if bias == "SHORT":
+            return "Failed: candle high breached stop; require cleaner VWAP rejection and weaker EMA alignment next run."
+        return "Failed: watch setup invalidated before clean entry trigger."
+    return "Unresolved: neither exit nor stop was reached in the comparison window."
+
+
+def _learning_notes(history):
+    notes = []
+    recent = []
+    for day_payload in history.get("days", {}).values():
+        recent.extend(day_payload.get("predictions", []))
+    invalids = [x for x in recent if x.get("outcome") == "invalid"]
+    exits = [x for x in recent if x.get("outcome") == "exit_hit"]
+    if invalids:
+        notes.append("Tighten entries after invalidations: require VWAP agreement plus EMA9/20 alignment before active alert.")
+    if exits and len(exits) >= len(invalids):
+        notes.append("Current ATR exit model is working better than stops over the retained week.")
+    if not notes:
+        notes.append("Not enough completed history yet; keep collecting one-minute predictions for calibration.")
+    notes.append("Success is not guaranteed; this is a strict-filter educational model, not a 90% promise.")
+    return notes[:4]
+
+
+def fetch_speculative_daytrade(limit=5, validate_history=False):
+    interval, period = "1m", "1d"
+    today_key = date.today().isoformat()
+    universe = SPECULATIVE_UNIVERSE[:max(5, min(SPECULATIVE_SCAN_LIMIT, len(SPECULATIVE_UNIVERSE)))]
+    frames = _fetch_intraday_frames(universe, interval, period)
+    setups = []
+    for sym in universe:
+        try:
+            if sym not in frames:
+                continue
+            setup = _daytrade_for_frame(sym, frames[sym], interval)
+            if not setup:
+                continue
+            setup["speculativeScore"] = _speculative_score(setup)
+            status, reason = _setup_status(setup, last=setup.get("last"))
+            setup["alertStatus"] = status
+            setup["alertReason"] = reason
+            setup["modelRule"] = "1m candles: rank range% + ATR% + volume pulse + VWAP/EMA alignment; remove active alert when stop invalidates."
+            setups.append(setup)
+        except Exception as e:
+            print(f"  WARN speculative setup {sym}: {e}", flush=True)
+    setups.sort(key=lambda x: (x.get("alertStatus") == "active", x.get("speculativeScore", 0)), reverse=True)
+    top = setups[:max(1, min(limit, 8))]
+
+    history = _history_load()
+    if validate_history:
+        history_symbols = sorted({
+            p.get("symbol", "")
+            for payload in history.get("days", {}).values()
+            for p in payload.get("predictions", [])
+            if p.get("symbol")
+        }) or [p.get("symbol") for p in top if p.get("symbol")]
+        frames_5d = _fetch_intraday_frames(history_symbols[:8], "1m", "5d")
+        history = _update_prediction_history(history, today_key, frames_5d)
+    history.setdefault("days", {})[today_key] = {
+        "generatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "method": "NandaEdge speculative 1m candle skill",
+        "predictions": [_compact_setup(x) for x in top],
+    }
+    _history_save(history)
+
+    active_alerts = [x for x in top if x.get("alertStatus") not in ("invalid", "exit_hit")]
+    compact_history = _compact_history(history)
+    return {
+        "generatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "interval": interval,
+        "period": period,
+        "universe": universe,
+        "results": top,
+        "activeAlerts": active_alerts,
+        "history": compact_history,
+        "learningNotes": _learning_notes(history),
+        "disclaimer": "Read-only educational scanner. No live trading, no order routing, and no guaranteed success rate.",
+    }
 
 # ── Technicals (computed indicators) ───────────────────
 def fetch_tech(syms=None):
@@ -564,8 +1030,20 @@ def _fetch_yahoo_spot(sym):
     import yfinance as yf
     _options_provider_delay()
     tk = yf.Ticker(sym)
-    spot_info = tk.fast_info
-    return tk, float(spot_info.last_price or 0)
+    spot = 0.0
+    try:
+        spot_info = tk.fast_info
+        spot = float(spot_info.last_price or 0)
+    except Exception:
+        spot = 0.0
+    if spot <= 0:
+        try:
+            hist = tk.history(period="5d", interval="1d", auto_adjust=False)
+            if hist is not None and not hist.empty:
+                spot = float(hist["Close"].dropna().iloc[-1])
+        except Exception:
+            spot = 0.0
+    return tk, spot
 
 
 def _fetch_schwab_option_rows(sym, opt_type, dte_min, dte_max):
@@ -1073,6 +1551,38 @@ class Handler(BaseHTTPRequestHandler):
             print(f"{sum(1 for v in data.values() if v)} ok in {time.time()-t0:.1f}s", flush=True)
             self._send(200, "application/json", json.dumps(data).encode())
 
+        elif path == "/candles":
+            syms = parse_symbols(qs, ["NVDA", "AMD", "IONQ"])
+            interval = (qs.get("interval", ["5m"])[0] or "5m").lower()
+            period = (qs.get("period", ["1d"])[0] or "1d").lower()
+            print(f"  [{time.strftime('%H:%M:%S')}] /candles ({','.join(syms)}) {interval}/{period} ...", end=" ", flush=True)
+            t0 = time.time()
+            data = fetch_candles(syms, interval, period)
+            print(f"{len(data)} syms in {time.time()-t0:.1f}s", flush=True)
+            self._send(200, "application/json", json.dumps(data).encode())
+
+        elif path == "/daytrade":
+            syms = parse_symbols(qs, ["NVDA", "AMD", "IONQ"])
+            interval = (qs.get("interval", ["5m"])[0] or "5m").lower()
+            period = (qs.get("period", ["1d"])[0] or "1d").lower()
+            print(f"  [{time.strftime('%H:%M:%S')}] /daytrade ({','.join(syms)}) {interval}/{period} ...", end=" ", flush=True)
+            t0 = time.time()
+            data = fetch_daytrade(syms, interval, period)
+            print(f"{len(data.get('results', []))} setups in {time.time()-t0:.1f}s", flush=True)
+            self._send(200, "application/json", json.dumps(data).encode())
+
+        elif path == "/speculative-daytrade":
+            try:
+                limit = int(qs.get("limit", ["5"])[0])
+            except ValueError:
+                limit = 5
+            validate_history = (qs.get("validate", ["0"])[0] or "0").lower() in {"1", "true", "yes"}
+            print(f"  [{time.strftime('%H:%M:%S')}] /speculative-daytrade top {limit} 1m validate={validate_history} ...", end=" ", flush=True)
+            t0 = time.time()
+            data = fetch_speculative_daytrade(limit, validate_history)
+            print(f"{len(data.get('results', []))} setups in {time.time()-t0:.1f}s", flush=True)
+            self._send(200, "application/json", json.dumps(data).encode())
+
         elif path == "/forecast":
             syms = parse_symbols(qs, WATCH)
             print(f"  [{time.strftime('%H:%M:%S')}] /forecast ({len(syms)}) ...", end=" ", flush=True)
@@ -1156,7 +1666,7 @@ class ThreadedServer(HTTPServer):
 # ── Main ───────────────────────────────────────────────
 if __name__ == "__main__":
     is_cloud = bool(os.environ.get("PORT"))
-    print(f"\n  NandaEdge Server v3.5 — {HOST}:{PORT}", flush=True)
+    print(f"\n  NandaEdge Server v3.6 — {HOST}:{PORT}", flush=True)
 
     if not is_cloud:
         if not port_free(PORT):
