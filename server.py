@@ -1620,6 +1620,13 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/health":
             self._send(200, "application/json", json.dumps({"ok": True, "authRequired": bool(AUTH_HASH)}).encode())
             return
+        if path == "/docs/whatsapp-stock-feed":
+            try:
+                body = open(os.path.join(BASE_DIR, "WHATSAPP_STOCK_FEED.md"), "rb").read()
+                self._send(200, "text/markdown; charset=utf-8", body)
+            except FileNotFoundError:
+                self._send(404, "text/plain", b"WHATSAPP_STOCK_FEED.md not found")
+            return
 
         # All endpoints below require auth (when AUTH_TOKEN_HASH is set)
         ok, status = _auth_state(self)

@@ -84,6 +84,8 @@ header{background:rgba(255,255,255,.92);border-bottom:1px solid var(--border);pa
 .wa-sync-btn:hover{border-color:var(--green);background:rgba(63,185,80,.2);}
 .wa-sync-btn:disabled{opacity:.65;cursor:wait;}
 .wa-sync-status{font-size:10px;color:var(--muted);max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.wa-doc-link{color:var(--blue);border:1px solid rgba(88,166,255,.35);background:rgba(88,166,255,.08);border-radius:6px;padding:7px 9px;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.7px;text-decoration:none;}
+.wa-doc-link:hover{background:rgba(88,166,255,.14);border-color:var(--blue);}
 @media(max-width:900px){.dashboard-tabs{flex-wrap:wrap;}.tab-note{margin-left:0;order:3;width:100%;}.wa-sync{order:2;margin-left:auto;}.wa-sync-status{max-width:180px;}}
 .sec-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);margin-bottom:10px;display:flex;align-items:center;gap:8px;}
 .sec-title::after{content:'';flex:1;height:1px;background:var(--border);}
@@ -538,6 +540,7 @@ tr:hover td{background:var(--hover);transition:.12s;}
     <div class="tab-note" id="tab-note">Day-trade candles load only when the Day Trade tab is opened.</div>
     <div class="wa-sync">
       <button id="whatsapp-sync-btn" class="wa-sync-btn" type="button" title="Scan Downloads for a WhatsApp group export and refresh the local Advisor feed">WhatsApp Sync</button>
+      <a class="wa-doc-link" href="/docs/whatsapp-stock-feed" target="_blank" rel="noopener">Docs</a>
       <span id="whatsapp-sync-status" class="wa-sync-status">Feed not checked</span>
     </div>
   </div>
