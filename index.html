@@ -258,6 +258,10 @@ tr:hover td{background:var(--hover);transition:.12s;}
 .dt-update-btn{background:var(--accent);border:1px solid var(--accent);color:#fff;border-radius:6px;padding:8px 11px;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.7px;cursor:pointer;}
 .dt-update-btn:hover{filter:brightness(1.08);}
 .dt-update-btn:disabled{opacity:.65;cursor:wait;}
+.dt-watch-btn{background:rgba(210,153,34,.14);border:1px solid rgba(210,153,34,.42);color:var(--yellow);border-radius:6px;padding:8px 11px;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.7px;cursor:pointer;}
+.dt-watch-btn.active{background:rgba(248,81,73,.14);border-color:rgba(248,81,73,.45);color:var(--red);}
+.dt-watch-btn:hover{filter:brightness(1.08);}
+.dt-watch-status{font-size:10px;color:var(--muted);font-weight:800;max-width:210px;text-align:right;line-height:1.35;}
 .dt-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;}
 .dt-kpi{background:var(--card2);border:1px solid var(--border);border-radius:7px;padding:10px 11px;min-height:66px;}
 .dt-kpi span{display:block;font-size:9px;color:var(--muted);font-weight:900;text-transform:uppercase;letter-spacing:.9px;margin-bottom:5px;}
@@ -651,6 +655,8 @@ tr:hover td{background:var(--hover);transition:.12s;}
       <div class="dt-command-meta">
         <div class="dt-readonly">Read-only analysis · no trade execution</div>
         <button id="daytrade-update-btn" class="dt-update-btn" type="button">Update Candles</button>
+        <button id="daytrade-watch-btn" class="dt-watch-btn" type="button">Watch 5m</button>
+        <div id="daytrade-watch-status" class="dt-watch-status">Manual mode · no background scans</div>
         <div class="dt-refresh">Last refresh: <span id="dt-refresh-time">—</span></div>
       </div>
     </div>
@@ -1092,6 +1098,12 @@ let WHATSAPP_FEED = null;
 let ACTIVE_VIEW = 'overview';
 let DAYTRADE_LOADED = false;
 let DAYTRADE_LOADING = false;
+let DAYTRADE_WATCH_ACTIVE = false;
+let DAYTRADE_WATCH_TIMER = null;
+let DAYTRADE_WATCH_ENDS_AT = 0;
+let DAYTRADE_WATCH_NEXT_AT = 0;
+const DAYTRADE_WATCH_INTERVAL_MS = 5 * 60 * 1000;
+const DAYTRADE_WATCH_DURATION_MS = 30 * 60 * 1000;
 async function fetchHistory(){  try { HIST = await fetchJSON(`/history?symbols=${watchSymParam()}&days=90`, 30000) || {}; } catch(e){ HIST = {}; } }
 async function fetchEarnings(){ try { EARN = await fetchJSON(`/earnings?symbols=${watchSymParam()}`,        45000) || {}; } catch(e){ EARN = {}; } }
 async function fetchDayTrade(){ try { DAYTRADE = await fetchJSON('/daytrade?symbols=NVDA,AMD,IONQ&interval=5m&period=1d', 45000); } catch(e){ DAYTRADE = { results: [], error: e.message }; } }
@@ -1340,6 +1352,62 @@ function renderDayTradeIdle(){
   if (alerts) alerts.innerHTML = '<div class="dt-empty" style="padding:8px;">No scan yet. Active alerts appear after manual update.</div>';
   if (learning) learning.innerHTML = '<div>Manual mode is active. Previous-day learning updates after the next scan.</div>';
   if (historyLine) historyLine.textContent = 'History is retained locally after scans; no background refresh is running.';
+}
+
+function updateDayTradeWatchStatus(msg){
+  const el = document.getElementById('daytrade-watch-status');
+  if (el) el.textContent = msg || 'Manual mode · no background scans';
+}
+
+function stopDayTradeWatch(reason='Manual mode · no background scans'){
+  DAYTRADE_WATCH_ACTIVE = false;
+  DAYTRADE_WATCH_ENDS_AT = 0;
+  DAYTRADE_WATCH_NEXT_AT = 0;
+  if (DAYTRADE_WATCH_TIMER) clearTimeout(DAYTRADE_WATCH_TIMER);
+  DAYTRADE_WATCH_TIMER = null;
+  const btn = document.getElementById('daytrade-watch-btn');
+  if (btn) {
+    btn.classList.remove('active');
+    btn.textContent = 'Watch 5m';
+  }
+  updateDayTradeWatchStatus(reason);
+}
+
+function scheduleDayTradeWatch(){
+  if (!DAYTRADE_WATCH_ACTIVE) return;
+  if (ACTIVE_VIEW !== 'daytrade' || document.hidden || Date.now() >= DAYTRADE_WATCH_ENDS_AT) {
+    stopDayTradeWatch('Watch paused · click Watch 5m when viewing');
+    return;
+  }
+  DAYTRADE_WATCH_NEXT_AT = Date.now() + DAYTRADE_WATCH_INTERVAL_MS;
+  updateDayTradeWatchStatus('Live watch on · next scan in 5 min');
+  if (DAYTRADE_WATCH_TIMER) clearTimeout(DAYTRADE_WATCH_TIMER);
+  DAYTRADE_WATCH_TIMER = setTimeout(async () => {
+    if (!DAYTRADE_WATCH_ACTIVE || ACTIVE_VIEW !== 'daytrade' || document.hidden) {
+      stopDayTradeWatch('Watch paused · page not active');
+      return;
+    }
+    updateDayTradeWatchStatus('Live watch scanning now...');
+    await refreshDayTradeTab(true);
+    scheduleDayTradeWatch();
+  }, DAYTRADE_WATCH_INTERVAL_MS);
+}
+
+async function toggleDayTradeWatch(){
+  if (DAYTRADE_WATCH_ACTIVE) {
+    stopDayTradeWatch();
+    return;
+  }
+  DAYTRADE_WATCH_ACTIVE = true;
+  DAYTRADE_WATCH_ENDS_AT = Date.now() + DAYTRADE_WATCH_DURATION_MS;
+  const btn = document.getElementById('daytrade-watch-btn');
+  if (btn) {
+    btn.classList.add('active');
+    btn.textContent = 'Stop Watch';
+  }
+  updateDayTradeWatchStatus('Live watch on · scanning now');
+  await refreshDayTradeTab(true);
+  scheduleDayTradeWatch();
 }
 
 function renderSpeculativeDayTrade(){
@@ -2339,7 +2407,11 @@ function updateClock(){
 }
 
 function setDashboardView(view){
-  ACTIVE_VIEW = view === 'daytrade' ? 'daytrade' : 'overview';
+  const nextView = view === 'daytrade' ? 'daytrade' : 'overview';
+  if (ACTIVE_VIEW === 'daytrade' && nextView !== 'daytrade') {
+    stopDayTradeWatch('Watch stopped · left Day Trade');
+  }
+  ACTIVE_VIEW = nextView;
   document.querySelectorAll('.dash-tab').forEach(btn => {
     const active = btn.dataset.view === ACTIVE_VIEW;
     btn.classList.toggle('active', active);
@@ -2539,6 +2611,10 @@ function bootDashboard(){
   document.getElementById('scan-options-btn').addEventListener('click', scanOptions);
   document.getElementById('whatsapp-sync-btn').addEventListener('click', syncWhatsAppFeed);
   document.getElementById('daytrade-update-btn').addEventListener('click', () => refreshDayTradeTab(true));
+  document.getElementById('daytrade-watch-btn').addEventListener('click', toggleDayTradeWatch);
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && DAYTRADE_WATCH_ACTIVE) stopDayTradeWatch('Watch paused · browser tab hidden');
+  });
   document.querySelectorAll('.dash-tab').forEach(btn => {
     btn.addEventListener('click', () => setDashboardView(btn.dataset.view));
   });
