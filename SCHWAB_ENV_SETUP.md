@@ -44,6 +44,50 @@ SCHWAB_REFRESH_TOKEN=
 SCHWAB_BASE_URL=https://api.schwabapi.com
 ```
 
+## Codex OAuth Helper Method
+
+This is the recommended local method. It does not use your Schwab password inside NandaEdge Advisor.
+
+1. Put your Schwab Developer app key, secret, and callback URL in `.env`:
+
+```text
+SCHWAB_APP_KEY=
+SCHWAB_APP_SECRET=
+SCHWAB_CALLBACK_URL=
+```
+
+2. Generate the Schwab login URL:
+
+```bash
+cd /Users/rajamac/myprojects/edge-advisor
+python3 scripts/schwab_oauth_tokens.py --auth-url
+```
+
+3. Open that URL in your browser and log in on Schwab's page.
+
+4. After Schwab redirects to your callback URL, copy the full callback URL from the browser address bar.
+
+5. Exchange the callback URL for tokens:
+
+```bash
+python3 scripts/schwab_oauth_tokens.py \
+  --callback-url "PASTE_FULL_CALLBACK_URL_HERE"
+```
+
+6. Copy the printed token lines into `.env`, or let the helper update `.env`:
+
+```bash
+python3 scripts/schwab_oauth_tokens.py \
+  --callback-url "PASTE_FULL_CALLBACK_URL_HERE" \
+  --write-env
+```
+
+Refresh an access token later:
+
+```bash
+python3 scripts/schwab_oauth_tokens.py --refresh --write-env
+```
+
 ## What To Enter
 
 | Variable | What goes here |
