@@ -255,6 +255,9 @@ tr:hover td{background:var(--hover);transition:.12s;}
 .dt-command-meta{display:grid;gap:6px;justify-items:end;}
 .dt-readonly{font-size:10px;color:var(--yellow);font-weight:900;text-transform:uppercase;letter-spacing:.8px;white-space:nowrap;}
 .dt-refresh{font-size:10px;color:var(--muted);font-weight:800;white-space:nowrap;}
+.dt-update-btn{background:var(--accent);border:1px solid var(--accent);color:#fff;border-radius:6px;padding:8px 11px;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.7px;cursor:pointer;}
+.dt-update-btn:hover{filter:brightness(1.08);}
+.dt-update-btn:disabled{opacity:.65;cursor:wait;}
 .dt-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;}
 .dt-kpi{background:var(--card2);border:1px solid var(--border);border-radius:7px;padding:10px 11px;min-height:66px;}
 .dt-kpi span{display:block;font-size:9px;color:var(--muted);font-weight:900;text-transform:uppercase;letter-spacing:.9px;margin-bottom:5px;}
@@ -552,7 +555,7 @@ tr:hover td{background:var(--hover);transition:.12s;}
   <div class="dashboard-tabs" role="tablist" aria-label="NandaEdge dashboard views">
     <button id="tab-overview" class="dash-tab active" type="button" role="tab" aria-selected="true" data-view="overview">Overview</button>
     <button id="tab-daytrade" class="dash-tab" type="button" role="tab" aria-selected="false" data-view="daytrade">Day Trade</button>
-    <div class="tab-note" id="tab-note">Day-trade candles load only when the Day Trade tab is opened.</div>
+    <div class="tab-note" id="tab-note">Day-trade candles update only on demand from the Day Trade tab.</div>
     <div class="wa-sync">
       <button id="whatsapp-sync-btn" class="wa-sync-btn" type="button" title="Scan Downloads for a WhatsApp group export and refresh the local Advisor feed">WhatsApp Sync</button>
       <a class="wa-doc-link" href="/docs/whatsapp-stock-feed" target="_blank" rel="noopener">Docs</a>
@@ -647,6 +650,7 @@ tr:hover td{background:var(--hover);transition:.12s;}
       </div>
       <div class="dt-command-meta">
         <div class="dt-readonly">Read-only analysis · no trade execution</div>
+        <button id="daytrade-update-btn" class="dt-update-btn" type="button">Update Candles</button>
         <div class="dt-refresh">Last refresh: <span id="dt-refresh-time">—</span></div>
       </div>
     </div>
@@ -1087,6 +1091,7 @@ let SPEC_DAYTRADE = null;
 let WHATSAPP_FEED = null;
 let ACTIVE_VIEW = 'overview';
 let DAYTRADE_LOADED = false;
+let DAYTRADE_LOADING = false;
 async function fetchHistory(){  try { HIST = await fetchJSON(`/history?symbols=${watchSymParam()}&days=90`, 30000) || {}; } catch(e){ HIST = {}; } }
 async function fetchEarnings(){ try { EARN = await fetchJSON(`/earnings?symbols=${watchSymParam()}`,        45000) || {}; } catch(e){ EARN = {}; } }
 async function fetchDayTrade(){ try { DAYTRADE = await fetchJSON('/daytrade?symbols=NVDA,AMD,IONQ&interval=5m&period=1d', 45000); } catch(e){ DAYTRADE = { results: [], error: e.message }; } }
@@ -1315,6 +1320,26 @@ function renderDayTradeSummary(){
     <div class="dt-kpi"><span>Active Alerts</span><strong>${active.length}</strong><small>${spec.length} speculative setups scanned</small></div>
     <div class="dt-kpi"><span>Core Setups</span><strong>${core.length}</strong><small>NVDA, AMD, IONQ 5-min candles</small></div>
     <div class="dt-kpi"><span>Previous Day</span><strong>${success}</strong><small>${successNote}</small></div>`;
+}
+
+function renderDayTradeIdle(){
+  if (DAYTRADE_LOADED) return;
+  const summary = document.getElementById('dt-summary-grid');
+  const spec = document.getElementById('spec-daytrade-grid');
+  const core = document.getElementById('daytrade-grid');
+  const alerts = document.getElementById('spec-alert-list');
+  const learning = document.getElementById('spec-learning-list');
+  const historyLine = document.getElementById('spec-history-line');
+  if (summary) summary.innerHTML = `
+    <div class="dt-kpi"><span>Status</span><strong>Manual</strong><small>Click Update Candles to scan now</small></div>
+    <div class="dt-kpi"><span>Active Alerts</span><strong>—</strong><small>No scan running in background</small></div>
+    <div class="dt-kpi"><span>Core Setups</span><strong>—</strong><small>Loads only on demand</small></div>
+    <div class="dt-kpi"><span>Memory Mode</span><strong>Light</strong><small>No 60-second day-trade refresh</small></div>`;
+  if (spec) spec.innerHTML = '<div class="dt-empty">Click Update Candles to scan small, mid, and large-cap 1-minute candle variance.</div>';
+  if (core) core.innerHTML = '<div class="dt-empty">Click Update Candles to generate NVDA, AMD, and IONQ candle setups.</div>';
+  if (alerts) alerts.innerHTML = '<div class="dt-empty" style="padding:8px;">No scan yet. Active alerts appear after manual update.</div>';
+  if (learning) learning.innerHTML = '<div>Manual mode is active. Previous-day learning updates after the next scan.</div>';
+  if (historyLine) historyLine.textContent = 'History is retained locally after scans; no background refresh is running.';
 }
 
 function renderSpeculativeDayTrade(){
@@ -2330,21 +2355,35 @@ function setDashboardView(view){
   const note = document.getElementById('tab-note');
   if (note) {
     note.textContent = ACTIVE_VIEW === 'daytrade'
-      ? 'Live candle tools are isolated here to protect the main dashboard and cloud memory.'
-      : 'Day-trade candles load only when the Day Trade tab is opened.';
+      ? 'Day-trade candles update only when you click Update Candles or Refresh.'
+      : 'Day-trade candles update only on demand from the Day Trade tab.';
   }
-  if (ACTIVE_VIEW === 'daytrade') refreshDayTradeTab();
+  if (ACTIVE_VIEW === 'daytrade') renderDayTradeIdle();
 }
 
 async function refreshDayTradeTab(force=false){
+  if (DAYTRADE_LOADING) return;
   if (DAYTRADE_LOADED && !force) return;
-  DAYTRADE_LOADED = true;
-  await Promise.all([fetchDayTrade(), fetchSpecDayTrade()]);
+  DAYTRADE_LOADING = true;
+  const btn = document.getElementById('daytrade-update-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Updating...'; }
   const refreshEl = document.getElementById('dt-refresh-time');
-  if (refreshEl) refreshEl.textContent = fmtRefreshTime(new Date());
-  try { renderDayTrade(); } catch(e){ console.warn('renderDayTrade', e); }
-  try { renderSpeculativeDayTrade(); } catch(e){ console.warn('renderSpeculativeDayTrade', e); }
-  try { renderDayTradeSummary(); } catch(e){ console.warn('renderDayTradeSummary', e); }
+  if (refreshEl) refreshEl.textContent = 'Scanning...';
+  const spec = document.getElementById('spec-daytrade-grid');
+  const core = document.getElementById('daytrade-grid');
+  if (spec) spec.innerHTML = '<div class="dt-empty"><span class="spinner"></span>Scanning market-cap lanes on demand…</div>';
+  if (core) core.innerHTML = '<div class="dt-empty"><span class="spinner"></span>Updating core candle setups…</div>';
+  DAYTRADE_LOADED = true;
+  try {
+    await Promise.all([fetchDayTrade(), fetchSpecDayTrade()]);
+    if (refreshEl) refreshEl.textContent = fmtRefreshTime(new Date());
+    try { renderDayTrade(); } catch(e){ console.warn('renderDayTrade', e); }
+    try { renderSpeculativeDayTrade(); } catch(e){ console.warn('renderSpeculativeDayTrade', e); }
+    try { renderDayTradeSummary(); } catch(e){ console.warn('renderDayTradeSummary', e); }
+  } finally {
+    DAYTRADE_LOADING = false;
+    if (btn) { btn.disabled = false; btn.textContent = 'Update Candles'; }
+  }
 }
 
 function refreshActiveView(){
@@ -2499,6 +2538,7 @@ function bootDashboard(){
   document.getElementById('reset-ticker-btn').addEventListener('click', resetTickers);
   document.getElementById('scan-options-btn').addEventListener('click', scanOptions);
   document.getElementById('whatsapp-sync-btn').addEventListener('click', syncWhatsAppFeed);
+  document.getElementById('daytrade-update-btn').addEventListener('click', () => refreshDayTradeTab(true));
   document.querySelectorAll('.dash-tab').forEach(btn => {
     btn.addEventListener('click', () => setDashboardView(btn.dataset.view));
   });
@@ -2519,8 +2559,7 @@ function bootDashboard(){
   fetchWhatsAppFeed().then(feed => renderWhatsAppSyncStatus(feed, 'Feed'));
   refresh();
   setInterval(() => {
-    if (ACTIVE_VIEW === 'daytrade') refreshDayTradeTab(true);
-    else refresh();
+    if (ACTIVE_VIEW !== 'daytrade') refresh();
   }, 60000);
 }
 
