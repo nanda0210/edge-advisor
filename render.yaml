@@ -8,3 +8,13 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
+      - key: CAP_CATEGORY_SCAN_LIMIT
+        value: 5
+      - key: SPECULATIVE_SCAN_LIMIT
+        value: 5
+      - key: SPEC_DAYTRADE_TTL
+        value: 120
+      - key: CANDLE_RESPONSE_LIMIT
+        value: 80
+      - key: DAYTRADE_CHART_LIMIT
+        value: 20

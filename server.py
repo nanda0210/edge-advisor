@@ -10,7 +10,7 @@ NandaEdge Data Server — v3.6
   Fear/Greed  → /feargreed                              CNN proxy
   Cloud-ready: reads PORT/HOST from env; binds 0.0.0.0 when PORT is set.
 """
-import os, sys, signal, time, json, math, socket, warnings, urllib.request, threading, hashlib, random, subprocess
+import os, sys, signal, time, json, math, socket, warnings, urllib.request, threading, hashlib, random, subprocess, gc
 from datetime import date, timedelta, timezone
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, urlencode
@@ -116,8 +116,8 @@ CAP_CATEGORY_UNIVERSES = {
 }
 # Keep cloud memory stable. The full speculative universe can be expanded
 # later, but normal dashboard refreshes should not batch-load every hot ticker.
-SPECULATIVE_SCAN_LIMIT = int(os.environ.get("SPECULATIVE_SCAN_LIMIT", "8") or "8")
-CAP_CATEGORY_SCAN_LIMIT = int(os.environ.get("CAP_CATEGORY_SCAN_LIMIT", "8") or "8")
+SPECULATIVE_SCAN_LIMIT = int(os.environ.get("SPECULATIVE_SCAN_LIMIT", "5") or "5")
+CAP_CATEGORY_SCAN_LIMIT = int(os.environ.get("CAP_CATEGORY_SCAN_LIMIT", "5") or "5")
 DAYTRADE_HISTORY_DAYS = int(os.environ.get("DAYTRADE_HISTORY_DAYS", "7") or "7")
 CANDLE_RESPONSE_LIMIT = int(os.environ.get("CANDLE_RESPONSE_LIMIT", "120") or "120")
 DAYTRADE_CHART_LIMIT = int(os.environ.get("DAYTRADE_CHART_LIMIT", "32") or "32")
@@ -147,6 +147,7 @@ _opts_cache  = {}                     # (sym, type) -> {"t": float, "data": list
 _hist_cache  = {}                     # (sym, days) -> {"t": float, "data": list}
 _candle_cache= {}                     # (symbols, interval, period) -> {"t": float, "data": dict}
 _daytrade_cache = {}                  # (symbols, interval, period) -> {"t": float, "data": dict}
+_spec_daytrade_cache = {}             # (limit, validate) -> {"t": float, "data": dict}
 _earn_cache  = {}                     # sym -> {"t": float, "data": dict}
 _rate_cache  = {"t": 0, "rate": 0.045}  # risk-free rate from ^TNX
 _fg_cache    = {"t": 0, "data": None}
@@ -156,6 +157,7 @@ OPTS_TTL = 600                        # 10 min — options chains move fast but 
 HIST_TTL = 1800                       # 30 min — daily closes don't change intraday
 CANDLE_TTL = 45                       # short TTL for intraday candles
 DAYTRADE_TTL = 60                     # day-trade plans refresh with live candle reads
+SPEC_DAYTRADE_TTL = int(os.environ.get("SPEC_DAYTRADE_TTL", "90") or "90")
 EARN_TTL = 86400                      # 24 hr — earnings dates rarely change intraday
 RATE_TTL = 3600                       # 1 hour for risk-free rate
 FG_TTL   = 600                        # 10 min
@@ -625,6 +627,18 @@ def _compact_setup(setup, keep_candles=False):
     return compact
 
 
+def _compact_live_setup(setup):
+    """Return lightweight live scanner rows; tables do not need candle arrays."""
+    fields = [
+        "symbol", "interval", "last", "bias", "setup", "entryValue", "exitValue",
+        "stopLoss", "vwap", "atr", "dayHigh", "dayLow", "volumeRatio",
+        "aiConfidence", "tradeRating", "exitRule", "why", "speculativeScore",
+        "variancePct", "alertStatus", "alertReason", "modelRule", "capCategory",
+        "signalTimePST", "entryTimePST", "exitTimePST", "invalidTimePST",
+    ]
+    return {k: setup[k] for k in fields if k in setup}
+
+
 def _compact_history(history):
     compact = {"days": {}}
     for day_key, payload in history.get("days", {}).items():
@@ -757,6 +771,11 @@ def fetch_speculative_daytrade(limit=5, validate_history=False):
     interval, period = "1m", "1d"
     today_key = date.today().isoformat()
     limit = max(1, min(limit, 8))
+    cache_key = (limit, bool(validate_history))
+    now = time.time()
+    cached = _spec_daytrade_cache.get(cache_key)
+    if cached and now - cached["t"] < SPEC_DAYTRADE_TTL:
+        return cached["data"]
 
     def build_setups(universe, category=None):
         scan_limit = max(limit, min(CAP_CATEGORY_SCAN_LIMIT if category else SPECULATIVE_SCAN_LIMIT, len(universe)))
@@ -781,6 +800,8 @@ def fetch_speculative_daytrade(limit=5, validate_history=False):
             except Exception as e:
                 print(f"  WARN speculative setup {sym}: {e}", flush=True)
         rows.sort(key=lambda x: (x.get("variancePct", 0), x.get("alertStatus") == "active", x.get("speculativeScore", 0)), reverse=True)
+        del frames
+        gc.collect()
         return rows[:limit], scan_universe
 
     categories = {}
@@ -790,7 +811,7 @@ def fetch_speculative_daytrade(limit=5, validate_history=False):
         categories[key] = {
             "label": {"small": "Small Cap", "mid": "Mid Cap", "large": "Large Cap"}.get(key, key.title()),
             "universe": scan_universe,
-            "results": rows,
+            "results": [_compact_live_setup(x) for x in rows],
         }
         scanned_universe.extend(scan_universe)
 
@@ -816,20 +837,24 @@ def fetch_speculative_daytrade(limit=5, validate_history=False):
     }
     _history_save(history)
 
-    active_alerts = [x for x in top if x.get("alertStatus") not in ("invalid", "exit_hit")]
+    lightweight_top = [_compact_live_setup(x) for x in top]
+    active_alerts = [x for x in lightweight_top if x.get("alertStatus") not in ("invalid", "exit_hit")]
     compact_history = _compact_history(history)
-    return {
+    data = {
         "generatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "interval": interval,
         "period": period,
         "universe": scanned_universe,
-        "results": top,
+        "results": lightweight_top,
         "categories": categories,
         "activeAlerts": active_alerts,
         "history": compact_history,
         "learningNotes": _learning_notes(history),
         "disclaimer": "Read-only educational scanner. No live trading, no order routing, and no guaranteed success rate.",
     }
+    _spec_daytrade_cache[cache_key] = {"t": time.time(), "data": data}
+    _trim_cache(_spec_daytrade_cache, 4)
+    return data
 
 # ── Technicals (computed indicators) ───────────────────
 def fetch_tech(syms=None):
