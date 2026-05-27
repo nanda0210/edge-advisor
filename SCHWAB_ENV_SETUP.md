@@ -38,11 +38,35 @@ Use these Schwab variables:
 ```text
 SCHWAB_APP_KEY=
 SCHWAB_APP_SECRET=
-SCHWAB_CALLBACK_URL=http://localhost:8765/schwab/callback
+SCHWAB_CALLBACK_URL=https://edge-advisor-api.onrender.com/schwab/callback
 SCHWAB_ACCESS_TOKEN=
 SCHWAB_REFRESH_TOKEN=
 SCHWAB_BASE_URL=https://api.schwabapi.com
 ```
+
+## Callback URL Requirement
+
+Schwab Developer Portal requires the callback URL to be **HTTPS** and under the portal's character limit.
+
+Do not enter this in Schwab Developer Portal:
+
+```text
+http://localhost:8765/schwab/callback
+```
+
+Use the deployed Render HTTPS callback instead:
+
+```text
+https://edge-advisor-api.onrender.com/schwab/callback
+```
+
+The value in `.env` must match exactly:
+
+```text
+SCHWAB_CALLBACK_URL=https://edge-advisor-api.onrender.com/schwab/callback
+```
+
+If your Render service URL is different, use that exact HTTPS URL with `/schwab/callback` at the end.
 
 ## Codex OAuth Helper Method
 
@@ -53,7 +77,7 @@ This is the recommended local method. It does not use your Schwab password insid
 ```text
 SCHWAB_APP_KEY=
 SCHWAB_APP_SECRET=
-SCHWAB_CALLBACK_URL=
+SCHWAB_CALLBACK_URL=https://edge-advisor-api.onrender.com/schwab/callback
 ```
 
 2. Generate the Schwab login URL:
