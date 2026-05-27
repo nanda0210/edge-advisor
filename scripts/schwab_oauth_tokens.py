@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import gzip
 import json
 import os
 import sys
@@ -75,6 +76,24 @@ def code_from_callback(callback_url: str) -> str:
     return urllib.parse.unquote(code)
 
 
+def redirect_uri_from_callback(callback_url: str) -> str:
+    parsed = urllib.parse.urlparse(callback_url)
+    if not parsed.scheme or not parsed.netloc:
+        return ""
+    return urllib.parse.urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", "", ""))
+
+
+def decode_error_body(err: urllib.error.HTTPError) -> str:
+    raw = err.read()
+    encoding = (err.headers.get("Content-Encoding", "") or "").lower()
+    if encoding == "gzip" or raw[:2] == b"\x1f\x8b":
+        try:
+            raw = gzip.decompress(raw)
+        except Exception:
+            pass
+    return raw.decode("utf-8", errors="replace")
+
+
 def post_token(app_key: str, app_secret: str, data: dict) -> dict:
     body = urllib.parse.urlencode(data).encode("utf-8")
     req = urllib.request.Request(
@@ -84,6 +103,7 @@ def post_token(app_key: str, app_secret: str, data: dict) -> dict:
             "Authorization": auth_header(app_key, app_secret),
             "Content-Type": "application/x-www-form-urlencoded",
             "Accept": "application/json",
+            "Accept-Encoding": "identity",
         },
         method="POST",
     )
@@ -91,7 +111,7 @@ def post_token(app_key: str, app_secret: str, data: dict) -> dict:
         with urllib.request.urlopen(req, timeout=30) as resp:
             return json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
-        detail = e.read().decode("utf-8", errors="replace")
+        detail = decode_error_body(e)
         raise SystemExit(f"Schwab token request failed: HTTP {e.code}\n{detail}")
 
 
@@ -149,14 +169,16 @@ def main() -> int:
         })
     else:
         code = args.code.strip()
+        exchange_redirect_uri = callback_url
         if args.callback_url:
             code = code_from_callback(args.callback_url)
+            exchange_redirect_uri = redirect_uri_from_callback(args.callback_url) or callback_url
         if not code:
             raise SystemExit("Provide --auth-url, --code, --callback-url, or --refresh.")
         token_payload = post_token(app_key, app_secret, {
             "grant_type": "authorization_code",
             "code": code,
-            "redirect_uri": callback_url,
+            "redirect_uri": exchange_redirect_uri,
         })
 
     print(json.dumps({k: v for k, v in token_payload.items() if k not in {"access_token", "refresh_token", "id_token"}}, indent=2))

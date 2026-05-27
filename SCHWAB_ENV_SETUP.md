@@ -98,6 +98,8 @@ python3 scripts/schwab_oauth_tokens.py \
   --callback-url "PASTE_FULL_CALLBACK_URL_HERE"
 ```
 
+The helper extracts both the authorization code and the redirect URI from the pasted callback URL, so the token exchange uses the same HTTPS callback path Schwab redirected to.
+
 6. Copy the printed token lines into `.env`, or let the helper update `.env`:
 
 ```bash
@@ -111,6 +113,8 @@ Refresh an access token later:
 ```bash
 python3 scripts/schwab_oauth_tokens.py --refresh --write-env
 ```
+
+If Schwab returns HTTP 400, generate a fresh auth URL and repeat the login. Authorization codes are short-lived and single-use, and the callback URL used in `.env`, the Schwab Developer Portal, and the final browser URL must match exactly.
 
 ## What To Enter
 
