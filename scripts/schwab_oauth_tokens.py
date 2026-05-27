@@ -94,17 +94,33 @@ def decode_error_body(err: urllib.error.HTTPError) -> str:
     return raw.decode("utf-8", errors="replace")
 
 
-def post_token(app_key: str, app_secret: str, data: dict) -> dict:
-    body = urllib.parse.urlencode(data).encode("utf-8")
+class TokenRequestError(Exception):
+    def __init__(self, status: int, detail: str):
+        super().__init__(detail)
+        self.status = status
+        self.detail = detail
+
+    def has_error(self, name: str) -> bool:
+        return f'"error":"{name}"' in self.detail.replace(" ", "") or f'"error": "{name}"' in self.detail
+
+
+def token_request(app_key: str, app_secret: str, data: dict, use_basic=True) -> dict:
+    payload = dict(data)
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Accept": "application/json",
+        "Accept-Encoding": "identity",
+    }
+    if use_basic:
+        headers["Authorization"] = auth_header(app_key, app_secret)
+    else:
+        payload["client_id"] = app_key
+        payload["client_secret"] = app_secret
+    body = urllib.parse.urlencode(payload).encode("utf-8")
     req = urllib.request.Request(
         TOKEN_URL,
         data=body,
-        headers={
-            "Authorization": auth_header(app_key, app_secret),
-            "Content-Type": "application/x-www-form-urlencoded",
-            "Accept": "application/json",
-            "Accept-Encoding": "identity",
-        },
+        headers=headers,
         method="POST",
     )
     try:
@@ -112,7 +128,20 @@ def post_token(app_key: str, app_secret: str, data: dict) -> dict:
             return json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         detail = decode_error_body(e)
-        raise SystemExit(f"Schwab token request failed: HTTP {e.code}\n{detail}")
+        raise TokenRequestError(e.code, detail)
+
+
+def post_token(app_key: str, app_secret: str, data: dict) -> dict:
+    try:
+        return token_request(app_key, app_secret, data, use_basic=True)
+    except TokenRequestError as e:
+        if e.has_error("invalid_client"):
+            print("Basic auth was rejected as invalid_client; retrying with client credentials in request body.", file=sys.stderr)
+            try:
+                return token_request(app_key, app_secret, data, use_basic=False)
+            except TokenRequestError as e2:
+                raise SystemExit(f"Schwab token request failed: HTTP {e2.status}\n{e2.detail}")
+        raise SystemExit(f"Schwab token request failed: HTTP {e.status}\n{e.detail}")
 
 
 def update_env_tokens(path: Path, token_payload: dict) -> None:

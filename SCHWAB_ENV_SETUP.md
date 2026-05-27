@@ -116,6 +116,8 @@ python3 scripts/schwab_oauth_tokens.py --refresh --write-env
 
 If Schwab returns HTTP 400, generate a fresh auth URL and repeat the login. Authorization codes are short-lived and single-use, and the callback URL used in `.env`, the Schwab Developer Portal, and the final browser URL must match exactly.
 
+The helper tries Schwab's token endpoint with HTTP Basic auth first. If Schwab returns `invalid_client`, it retries once using `client_id` and `client_secret` in the form body.
+
 ## What To Enter
 
 | Variable | What goes here |
