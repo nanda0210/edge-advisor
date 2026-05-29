@@ -54,19 +54,25 @@ Do not enter this in Schwab Developer Portal:
 http://localhost:8765/schwab/callback
 ```
 
-Use the deployed Render HTTPS callback instead:
+Use the GitHub Pages callback for the easiest manual setup:
 
 ```text
-https://edge-advisor-api.onrender.com/schwab/callback
+https://nanda0210.github.io/edge-advisor/schwab/callback
 ```
 
 The value in `.env` must match exactly:
 
 ```text
-SCHWAB_CALLBACK_URL=https://edge-advisor-api.onrender.com/schwab/callback
+SCHWAB_CALLBACK_URL=https://nanda0210.github.io/edge-advisor/schwab/callback
 ```
 
-If your Render service URL is different, use that exact HTTPS URL with `/schwab/callback` at the end.
+The callback page is static and local-helper-only: it does not store secrets, tokens, or account data. It only shows the command needed to exchange the short-lived Schwab authorization code on your Mac.
+
+If you prefer the Render service callback, use this exact HTTPS URL instead and make `.env` match it exactly:
+
+```text
+https://edge-advisor-api.onrender.com/schwab/callback
+```
 
 ## Codex OAuth Helper Method
 
@@ -77,7 +83,7 @@ This is the recommended local method. It does not use your Schwab password insid
 ```text
 SCHWAB_APP_KEY=
 SCHWAB_APP_SECRET=
-SCHWAB_CALLBACK_URL=https://edge-advisor-api.onrender.com/schwab/callback
+SCHWAB_CALLBACK_URL=https://nanda0210.github.io/edge-advisor/schwab/callback
 ```
 
 2. Generate the Schwab login URL:
