@@ -57,13 +57,13 @@ http://localhost:8765/schwab/callback
 Use the GitHub Pages callback for the easiest manual setup:
 
 ```text
-https://nanda0210.github.io/edge-advisor/schwab/callback
+https://nanda0210.github.io/edge-advisor/schwab/callback/
 ```
 
 The value in `.env` must match exactly:
 
 ```text
-SCHWAB_CALLBACK_URL=https://nanda0210.github.io/edge-advisor/schwab/callback
+SCHWAB_CALLBACK_URL=https://nanda0210.github.io/edge-advisor/schwab/callback/
 ```
 
 The callback page is static and local-helper-only: it does not store secrets, tokens, or account data. It only shows the command needed to exchange the short-lived Schwab authorization code on your Mac.
@@ -83,7 +83,7 @@ This is the recommended local method. It does not use your Schwab password insid
 ```text
 SCHWAB_APP_KEY=
 SCHWAB_APP_SECRET=
-SCHWAB_CALLBACK_URL=https://nanda0210.github.io/edge-advisor/schwab/callback
+SCHWAB_CALLBACK_URL=https://nanda0210.github.io/edge-advisor/schwab/callback/
 ```
 
 2. Generate the Schwab login URL:
