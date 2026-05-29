@@ -13,6 +13,8 @@
       --muted: #5b6673;
       --line: #d8dee8;
       --accent: #1f7a56;
+      --warn: #8a5a00;
+      --warn-bg: #fff7df;
     }
 
     body {
@@ -76,6 +78,21 @@
       cursor: pointer;
     }
 
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+    }
+
+    .notice {
+      margin-top: 14px;
+      padding: 12px;
+      border: 1px solid #f0d287;
+      border-radius: 6px;
+      color: var(--warn);
+      background: var(--warn-bg);
+      font-weight: 700;
+    }
+
     .status {
       display: inline-block;
       margin-top: 12px;
@@ -88,22 +105,41 @@
   <main>
     <h1>NandaEdge Advisor Schwab Callback</h1>
     <p>This page only helps capture the Schwab OAuth redirect URL for local token setup. It does not store secrets, tokens, or account data.</p>
-    <p>Copy the command below and run it immediately from the NandaEdge Advisor project folder. Schwab authorization codes are short-lived and single-use.</p>
+    <p id="instructions">Copy the command below and run it immediately from the NandaEdge Advisor project folder. Schwab authorization codes are short-lived and single-use.</p>
+    <div class="notice" id="notice" hidden></div>
     <textarea id="command" readonly></textarea>
     <button id="copy" type="button">Copy Command</button>
     <div class="status" id="status" aria-live="polite"></div>
   </main>
   <script>
     const callbackUrl = window.location.href;
-    const escapedUrl = callbackUrl.replace(/"/g, '\\"');
-    const command = [
-      "cd /Users/rajamac/myprojects/edge-advisor",
-      `python3 scripts/schwab_oauth_tokens.py --callback-url "${escapedUrl}" --write-env`
-    ].join("\n");
-
+    const params = new URLSearchParams(window.location.search);
+    const hasCode = Boolean(params.get("code"));
     const commandBox = document.getElementById("command");
     const status = document.getElementById("status");
-    commandBox.value = command;
+    const notice = document.getElementById("notice");
+    const instructions = document.getElementById("instructions");
+    const copyButton = document.getElementById("copy");
+    let command = "";
+
+    if (hasCode) {
+      const escapedUrl = callbackUrl.replace(/"/g, '\\"');
+      command = [
+        "cd /Users/rajamac/myprojects/edge-advisor",
+        `python3 scripts/schwab_oauth_tokens.py --callback-url "${escapedUrl}" --write-env`
+      ].join("\n");
+      commandBox.value = command;
+    } else {
+      instructions.textContent = "No Schwab authorization code was detected in this URL yet.";
+      notice.hidden = false;
+      notice.textContent = "Start from the generated Schwab login URL first. After Schwab approval, this page should reload with ?code=... in the address bar.";
+      commandBox.value = [
+        "cd /Users/rajamac/myprojects/edge-advisor",
+        "python3 scripts/schwab_oauth_tokens.py --auth-url"
+      ].join("\n");
+      copyButton.textContent = "Copy Auth URL Command";
+      command = commandBox.value;
+    }
 
     document.getElementById("copy").addEventListener("click", async () => {
       try {
