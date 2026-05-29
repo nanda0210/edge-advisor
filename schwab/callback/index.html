@@ -105,8 +105,8 @@
   <main>
     <h1>NandaEdge Advisor Schwab Callback</h1>
     <p>This page only helps capture the Schwab OAuth redirect URL for local token setup. It does not store secrets, tokens, or account data.</p>
-    <p id="instructions">Copy the command below and run it immediately from the NandaEdge Advisor project folder. Schwab authorization codes are short-lived and single-use.</p>
-    <div class="notice" id="notice" hidden></div>
+    <p id="instructions">No Schwab authorization code was detected in this URL yet.</p>
+    <div class="notice" id="notice">Start from the generated Schwab login URL first. After Schwab approval, this page should reload with ?code=... in the address bar.</div>
     <textarea id="command" readonly></textarea>
     <button id="copy" type="button">Copy Command</button>
     <div class="status" id="status" aria-live="polite"></div>
@@ -124,6 +124,8 @@
 
     if (hasCode) {
       const escapedUrl = callbackUrl.replace(/"/g, '\\"');
+      instructions.textContent = "Schwab authorization code detected. Copy and run this command immediately.";
+      notice.hidden = true;
       command = [
         "cd /Users/rajamac/myprojects/edge-advisor",
         `python3 scripts/schwab_oauth_tokens.py --callback-url "${escapedUrl}" --write-env`
@@ -131,7 +133,6 @@
       commandBox.value = command;
     } else {
       instructions.textContent = "No Schwab authorization code was detected in this URL yet.";
-      notice.hidden = false;
       notice.textContent = "Start from the generated Schwab login URL first. After Schwab approval, this page should reload with ?code=... in the address bar.";
       commandBox.value = [
         "cd /Users/rajamac/myprojects/edge-advisor",
