@@ -655,6 +655,7 @@ tr:hover td{background:var(--hover);transition:.12s;}
       <div class="dt-command-meta">
         <div class="dt-readonly">Read-only analysis · no trade execution</div>
         <button id="daytrade-update-btn" class="dt-update-btn" type="button">Update Candles</button>
+        <button id="daytrade-validate-btn" class="dt-watch-btn" type="button">Validate History</button>
         <button id="daytrade-watch-btn" class="dt-watch-btn" type="button">Watch 5m</button>
         <div id="daytrade-watch-status" class="dt-watch-status">Manual mode · no background scans</div>
         <div class="dt-refresh">Last refresh: <span id="dt-refresh-time">—</span></div>
@@ -1107,7 +1108,13 @@ const DAYTRADE_WATCH_DURATION_MS = 30 * 60 * 1000;
 async function fetchHistory(){  try { HIST = await fetchJSON(`/history?symbols=${watchSymParam()}&days=90`, 30000) || {}; } catch(e){ HIST = {}; } }
 async function fetchEarnings(){ try { EARN = await fetchJSON(`/earnings?symbols=${watchSymParam()}`,        45000) || {}; } catch(e){ EARN = {}; } }
 async function fetchDayTrade(){ try { DAYTRADE = await fetchJSON('/daytrade?symbols=NVDA,AMD,IONQ&interval=5m&period=1d', 45000); } catch(e){ DAYTRADE = { results: [], error: e.message }; } }
-async function fetchSpecDayTrade(){ try { SPEC_DAYTRADE = await fetchJSON('/speculative-daytrade?limit=5', 70000); } catch(e){ SPEC_DAYTRADE = { results: [], activeAlerts: [], history: {days:{}}, learningNotes: [e.message] }; } }
+async function fetchSpecDayTrade(validate=false){
+  try {
+    SPEC_DAYTRADE = await fetchJSON(`/speculative-daytrade?limit=5${validate ? '&validate=1' : ''}`, validate ? 120000 : 70000);
+  } catch(e){
+    SPEC_DAYTRADE = { results: [], activeAlerts: [], history: {days:{}}, learningNotes: [e.message] };
+  }
+}
 async function fetchWhatsAppFeed(){ try { WHATSAPP_FEED = await fetchJSON('/whatsapp-stock-feed', 12000); } catch(e){ WHATSAPP_FEED = { signals: [], error: e.message }; } return WHATSAPP_FEED; }
 function fmtEarn(sym){
   const e = EARN[sym]; if (!e || !e.nextDate) return null;
@@ -1484,7 +1491,9 @@ function renderSpeculativeDayTrade(){
   learning.innerHTML = [successSummary, weekSummary]
     .concat((SPEC_DAYTRADE?.learningNotes || []).map(note => `<div>• ${note}</div>`))
     .join('');
-  const completed = days.flatMap(d => SPEC_DAYTRADE.history.days[d].predictions || []).filter(x => x.outcome);
+  const completed = days
+    .flatMap(d => SPEC_DAYTRADE.history.days[d].predictions || [])
+    .filter(x => ['exit_hit','invalid','triggered'].includes(x.outcome));
   const exits = completed.filter(x => x.outcome === 'exit_hit').length;
   const invalid = completed.filter(x => x.outcome === 'invalid').length;
   historyLine.textContent = days.length
@@ -2458,6 +2467,25 @@ async function refreshDayTradeTab(force=false){
   }
 }
 
+async function validateDayTradeHistory(){
+  if (DAYTRADE_LOADING) return;
+  DAYTRADE_LOADING = true;
+  const btn = document.getElementById('daytrade-validate-btn');
+  const refreshEl = document.getElementById('dt-refresh-time');
+  if (btn) { btn.disabled = true; btn.textContent = 'Validating...'; }
+  if (refreshEl) refreshEl.textContent = 'Validating history...';
+  try {
+    await fetchSpecDayTrade(true);
+    DAYTRADE_LOADED = true;
+    if (refreshEl) refreshEl.textContent = fmtRefreshTime(new Date());
+    try { renderSpeculativeDayTrade(); } catch(e){ console.warn('renderSpeculativeDayTrade', e); }
+    try { renderDayTradeSummary(); } catch(e){ console.warn('renderDayTradeSummary', e); }
+  } finally {
+    DAYTRADE_LOADING = false;
+    if (btn) { btn.disabled = false; btn.textContent = 'Validate History'; }
+  }
+}
+
 function refreshActiveView(){
   if (ACTIVE_VIEW === 'daytrade') return refreshDayTradeTab(true);
   return refresh();
@@ -2611,6 +2639,7 @@ function bootDashboard(){
   document.getElementById('scan-options-btn').addEventListener('click', scanOptions);
   document.getElementById('whatsapp-sync-btn').addEventListener('click', syncWhatsAppFeed);
   document.getElementById('daytrade-update-btn').addEventListener('click', () => refreshDayTradeTab(true));
+  document.getElementById('daytrade-validate-btn').addEventListener('click', validateDayTradeHistory);
   document.getElementById('daytrade-watch-btn').addEventListener('click', toggleDayTradeWatch);
   document.addEventListener('visibilitychange', () => {
     if (document.hidden && DAYTRADE_WATCH_ACTIVE) stopDayTradeWatch('Watch paused · browser tab hidden');
