@@ -1115,6 +1115,41 @@ async function fetchSpecDayTrade(validate=false){
     SPEC_DAYTRADE = { results: [], activeAlerts: [], history: {days:{}}, learningNotes: [e.message] };
   }
 }
+function pacificParts(dt=new Date()){
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Los_Angeles',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    weekday: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  }).formatToParts(dt).reduce((acc, p) => {
+    acc[p.type] = p.value;
+    return acc;
+  }, {});
+  return {
+    key: `${parts.year}-${parts.month}-${parts.day}`,
+    weekday: parts.weekday,
+    hour: Number(parts.hour),
+    minute: Number(parts.minute)
+  };
+}
+function pacificDateKey(dt=new Date()){ return pacificParts(dt).key; }
+function shouldValidateDayTradeHistory(dt=new Date()){
+  const p = pacificParts(dt);
+  const weekend = p.weekday === 'Sat' || p.weekday === 'Sun';
+  const afterClose = p.hour > 13 || (p.hour === 13 && p.minute >= 15);
+  const beforeOpen = p.hour < 6 || (p.hour === 6 && p.minute < 30);
+  return weekend || afterClose || beforeOpen;
+}
+function syncDayTradeActionLabels(){
+  const btn = document.getElementById('daytrade-update-btn');
+  if (btn && !DAYTRADE_LOADING) {
+    btn.textContent = shouldValidateDayTradeHistory() ? 'Update + Validate' : 'Update Candles';
+  }
+}
 async function fetchWhatsAppFeed(){ try { WHATSAPP_FEED = await fetchJSON('/whatsapp-stock-feed', 12000); } catch(e){ WHATSAPP_FEED = { signals: [], error: e.message }; } return WHATSAPP_FEED; }
 function fmtEarn(sym){
   const e = EARN[sym]; if (!e || !e.nextDate) return null;
@@ -1325,7 +1360,7 @@ function renderDayTradeSummary(){
   const spec = SPEC_DAYTRADE?.results || [];
   const active = SPEC_DAYTRADE?.activeAlerts || [];
   const days = Object.keys(SPEC_DAYTRADE?.history?.days || {}).sort();
-  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayKey = pacificDateKey();
   const priorDays = days.filter(d => d < todayKey).slice(-7);
   const previousDay = priorDays[priorDays.length - 1];
   const prevStats = previousDay ? summarizeSuccessRate(SPEC_DAYTRADE.history.days[previousDay].predictions || []) : null;
@@ -1359,6 +1394,7 @@ function renderDayTradeIdle(){
   if (alerts) alerts.innerHTML = '<div class="dt-empty" style="padding:8px;">No scan yet. Active alerts appear after manual update.</div>';
   if (learning) learning.innerHTML = '<div>Manual mode is active. Previous-day learning updates after the next scan.</div>';
   if (historyLine) historyLine.textContent = 'History is retained locally after scans; no background refresh is running.';
+  syncDayTradeActionLabels();
 }
 
 function updateDayTradeWatchStatus(msg){
@@ -1477,7 +1513,7 @@ function renderSpeculativeDayTrade(){
     </div>`).join('') : '<div class="dt-empty" style="padding:8px;">No active alerts. Invalidated setups were removed.</div>';
 
   const days = Object.keys(SPEC_DAYTRADE?.history?.days || {}).sort();
-  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayKey = pacificDateKey();
   const priorDays = days.filter(d => d < todayKey).slice(-7);
   const previousDay = priorDays[priorDays.length - 1];
   const prevStats = previousDay ? summarizeSuccessRate(SPEC_DAYTRADE.history.days[previousDay].predictions || []) : null;
@@ -2449,21 +2485,22 @@ async function refreshDayTradeTab(force=false){
   const btn = document.getElementById('daytrade-update-btn');
   if (btn) { btn.disabled = true; btn.textContent = 'Updating...'; }
   const refreshEl = document.getElementById('dt-refresh-time');
-  if (refreshEl) refreshEl.textContent = 'Scanning...';
+  const validate = shouldValidateDayTradeHistory();
+  if (refreshEl) refreshEl.textContent = validate ? 'Scanning + validating history...' : 'Scanning...';
   const spec = document.getElementById('spec-daytrade-grid');
   const core = document.getElementById('daytrade-grid');
   if (spec) spec.innerHTML = '<div class="dt-empty"><span class="spinner"></span>Scanning market-cap lanes on demand…</div>';
   if (core) core.innerHTML = '<div class="dt-empty"><span class="spinner"></span>Updating core candle setups…</div>';
   DAYTRADE_LOADED = true;
   try {
-    await Promise.all([fetchDayTrade(), fetchSpecDayTrade()]);
+    await Promise.all([fetchDayTrade(), fetchSpecDayTrade(validate)]);
     if (refreshEl) refreshEl.textContent = fmtRefreshTime(new Date());
     try { renderDayTrade(); } catch(e){ console.warn('renderDayTrade', e); }
     try { renderSpeculativeDayTrade(); } catch(e){ console.warn('renderSpeculativeDayTrade', e); }
     try { renderDayTradeSummary(); } catch(e){ console.warn('renderDayTradeSummary', e); }
   } finally {
     DAYTRADE_LOADING = false;
-    if (btn) { btn.disabled = false; btn.textContent = 'Update Candles'; }
+    if (btn) { btn.disabled = false; btn.textContent = validate ? 'Update + Validate' : 'Update Candles'; }
   }
 }
 
