@@ -83,6 +83,16 @@ def redirect_uri_from_callback(callback_url: str) -> str:
     return urllib.parse.urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", "", ""))
 
 
+def same_callback_path(left: str, right: str) -> bool:
+    a = urllib.parse.urlparse(left)
+    b = urllib.parse.urlparse(right)
+    return (
+        a.scheme.lower() == b.scheme.lower()
+        and a.netloc.lower() == b.netloc.lower()
+        and a.path.rstrip("/") == b.path.rstrip("/")
+    )
+
+
 def decode_error_body(err: urllib.error.HTTPError) -> str:
     raw = err.read()
     encoding = (err.headers.get("Content-Encoding", "") or "").lower()
@@ -201,7 +211,9 @@ def main() -> int:
         exchange_redirect_uri = callback_url
         if args.callback_url:
             code = code_from_callback(args.callback_url)
-            exchange_redirect_uri = redirect_uri_from_callback(args.callback_url) or callback_url
+            returned_redirect_uri = redirect_uri_from_callback(args.callback_url)
+            if returned_redirect_uri and not same_callback_path(returned_redirect_uri, callback_url):
+                exchange_redirect_uri = returned_redirect_uri
         if not code:
             raise SystemExit("Provide --auth-url, --code, --callback-url, or --refresh.")
         token_payload = post_token(app_key, app_secret, {
