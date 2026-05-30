@@ -18,3 +18,17 @@ services:
         value: 80
       - key: DAYTRADE_CHART_LIMIT
         value: 20
+      - key: AUTH_TOKEN_HASH
+        sync: false
+      - key: SCHWAB_APP_KEY
+        sync: false
+      - key: SCHWAB_APP_SECRET
+        sync: false
+      - key: SCHWAB_CALLBACK_URL
+        value: https://nanda0210.github.io/edge-advisor/schwab/callback
+      - key: SCHWAB_ACCESS_TOKEN
+        sync: false
+      - key: SCHWAB_REFRESH_TOKEN
+        sync: false
+      - key: SCHWAB_BASE_URL
+        value: https://api.schwabapi.com
