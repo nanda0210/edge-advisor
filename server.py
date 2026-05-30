@@ -10,7 +10,7 @@ NandaEdge Data Server — v3.6
   Fear/Greed  → /feargreed                              CNN proxy
   Cloud-ready: reads PORT/HOST from env; binds 0.0.0.0 when PORT is set.
 """
-import os, sys, signal, time, json, math, socket, warnings, urllib.request, threading, hashlib, random, subprocess, gc
+import os, sys, signal, time, json, math, socket, warnings, urllib.request, urllib.error, threading, hashlib, random, subprocess, gc, base64
 from datetime import date, timedelta, timezone
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, urlencode
@@ -97,6 +97,9 @@ SCHWAB_CALLBACK_URL  = (os.environ.get("SCHWAB_CALLBACK_URL", "") or "").strip()
 SCHWAB_ACCESS_TOKEN  = (os.environ.get("SCHWAB_ACCESS_TOKEN", "") or "").strip()
 SCHWAB_REFRESH_TOKEN = (os.environ.get("SCHWAB_REFRESH_TOKEN", "") or "").strip()
 SCHWAB_BASE_URL      = (os.environ.get("SCHWAB_BASE_URL", "https://api.schwabapi.com") or "").rstrip("/")
+SCHWAB_TOKEN_URL     = "https://api.schwabapi.com/v1/oauth/token"
+_SCHWAB_TOKEN_LOCK   = threading.Lock()
+_SCHWAB_REFRESH_LAST = 0.0
 
 # Optional legacy/secondary provider. If absent, /options skips Tradier safely.
 TRADIER_ACCESS_TOKEN = (os.environ.get("TRADIER_ACCESS_TOKEN", "") or "").strip()
@@ -1124,6 +1127,90 @@ def _http_json(url, headers=None, timeout=10):
         return json.load(r)
 
 
+def _schwab_basic_auth():
+    raw = f"{SCHWAB_APP_KEY}:{SCHWAB_APP_SECRET}".encode("utf-8")
+    return "Basic " + base64.b64encode(raw).decode("ascii")
+
+
+def _schwab_token_request(payload, use_basic=True):
+    data = dict(payload)
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Accept": "application/json",
+        "Accept-Encoding": "identity",
+    }
+    if use_basic:
+        headers["Authorization"] = _schwab_basic_auth()
+    else:
+        data["client_id"] = SCHWAB_APP_KEY
+        data["client_secret"] = SCHWAB_APP_SECRET
+    req = urllib.request.Request(
+        SCHWAB_TOKEN_URL,
+        data=urlencode(data).encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        return json.load(resp)
+
+
+def _refresh_schwab_access_token():
+    """
+    Refresh Schwab market-data access in memory for live server uptime.
+
+    Tokens remain server-side. This does not request account/trading scopes and
+    does not persist new token values to source files. Render should still keep
+    SCHWAB_REFRESH_TOKEN in Environment for restarts.
+    """
+    global SCHWAB_ACCESS_TOKEN, SCHWAB_REFRESH_TOKEN, _SCHWAB_REFRESH_LAST
+    if not (SCHWAB_APP_KEY and SCHWAB_APP_SECRET and SCHWAB_REFRESH_TOKEN):
+        return False
+    with _SCHWAB_TOKEN_LOCK:
+        now = time.time()
+        if now - _SCHWAB_REFRESH_LAST < 20:
+            return bool(SCHWAB_ACCESS_TOKEN)
+        _SCHWAB_REFRESH_LAST = now
+        payload = {
+            "grant_type": "refresh_token",
+            "refresh_token": SCHWAB_REFRESH_TOKEN,
+        }
+        try:
+            token_payload = _schwab_token_request(payload, use_basic=True)
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode("utf-8", errors="replace")
+            if "invalid_client" not in detail:
+                raise RuntimeError(f"Schwab token refresh failed: HTTP {e.code}")
+            token_payload = _schwab_token_request(payload, use_basic=False)
+        access = (token_payload.get("access_token") or "").strip()
+        refresh = (token_payload.get("refresh_token") or "").strip()
+        if not access:
+            raise RuntimeError("Schwab token refresh returned no access token")
+        SCHWAB_ACCESS_TOKEN = access
+        if refresh:
+            SCHWAB_REFRESH_TOKEN = refresh
+        return True
+
+
+def _schwab_http_json(url):
+    if not SCHWAB_ACCESS_TOKEN:
+        raise RuntimeError("Schwab not configured: missing SCHWAB_ACCESS_TOKEN")
+    headers = {
+        "Authorization": f"Bearer {SCHWAB_ACCESS_TOKEN}",
+        "Accept": "application/json",
+    }
+    try:
+        return _http_json(url, headers=headers)
+    except urllib.error.HTTPError as e:
+        if e.code not in (401, 403):
+            raise
+        if not _refresh_schwab_access_token():
+            raise RuntimeError("Schwab token expired and refresh token is not configured")
+        return _http_json(url, headers={
+            "Authorization": f"Bearer {SCHWAB_ACCESS_TOKEN}",
+            "Accept": "application/json",
+        })
+
+
 def _num(v, default=None):
     try:
         if v in ("", None):
@@ -1176,13 +1263,15 @@ def _fetch_schwab_option_rows(sym, opt_type, dte_min, dte_max):
     """
     Schwab Market Data integration for options chains only.
 
-    OAuth setup note for later:
+    OAuth setup note:
     1. Create a Schwab developer app and set SCHWAB_APP_KEY,
        SCHWAB_APP_SECRET, and SCHWAB_CALLBACK_URL outside source control.
     2. Complete Schwab's authorization-code flow externally.
     3. Store only the resulting SCHWAB_ACCESS_TOKEN/SCHWAB_REFRESH_TOKEN in
-       the runtime environment or local .env. This app intentionally does not
-       request account scopes, place trades, or refresh tokens automatically.
+       Render Environment or local .env.
+    4. The live server may refresh an expired market-data access token in
+       memory using SCHWAB_REFRESH_TOKEN, but it never requests account scopes,
+       places trades, or exposes broker tokens to the browser.
     """
     if not SCHWAB_ACCESS_TOKEN:
         raise RuntimeError("Schwab not configured: missing SCHWAB_ACCESS_TOKEN")
@@ -1198,10 +1287,7 @@ def _fetch_schwab_option_rows(sym, opt_type, dte_min, dte_max):
         "toDate": to_date.isoformat(),
     }
     url = f"{SCHWAB_BASE_URL}/marketdata/v1/chains?{urlencode(params)}"
-    data = _http_json(url, headers={
-        "Authorization": f"Bearer {SCHWAB_ACCESS_TOKEN}",
-        "Accept": "application/json",
-    })
+    data = _schwab_http_json(url)
 
     spot = _num(data.get("underlyingPrice") or data.get("underlying", {}).get("last"), None)
     exp_map = data.get("putExpDateMap" if opt_type == "puts" else "callExpDateMap") or {}

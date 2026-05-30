@@ -35,6 +35,11 @@ SCHWAB_REFRESH_TOKEN=<local refresh token from scripts/schwab_oauth_tokens.py>
 SCHWAB_BASE_URL=https://api.schwabapi.com
 ```
 
+The live server keeps tokens server-side. When Schwab returns an expired access
+token response, the backend refreshes the access token in memory using
+`SCHWAB_REFRESH_TOKEN` and retries the options-chain request once. It does not
+write tokens to GitHub Pages, browser storage, logs, or source files.
+
 Optional:
 
 ```text
@@ -79,11 +84,14 @@ Expected behavior:
 
 ## 5. Token Refresh
 
-Refresh local tokens when needed:
+The Render server can refresh access tokens in memory while it is running. If
+the service restarts and the saved refresh token has expired or been rotated,
+refresh tokens locally:
 
 ```bash
 cd /Users/rajamac/myprojects/edge-advisor
 python3 scripts/schwab_oauth_tokens.py --refresh --write-env
 ```
 
-Then copy the updated Schwab token values from local `.env` into Render Environment and redeploy.
+Then copy the updated Schwab token values from local `.env` into Render
+Environment and redeploy.
