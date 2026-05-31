@@ -87,6 +87,24 @@ header{background:rgba(255,255,255,.92);border-bottom:1px solid var(--border);pa
 .wa-doc-link{color:var(--blue);border:1px solid rgba(88,166,255,.35);background:rgba(88,166,255,.08);border-radius:6px;padding:7px 9px;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.7px;text-decoration:none;}
 .wa-doc-link:hover{background:rgba(88,166,255,.14);border-color:var(--blue);}
 @media(max-width:900px){.dashboard-tabs{flex-wrap:wrap;}.tab-note{margin-left:0;order:3;width:100%;}.wa-sync{order:2;margin-left:auto;}.wa-sync-status{max-width:180px;}}
+.advisor-command{display:grid;grid-template-columns:1.2fr 1fr;gap:12px;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:12px 14px;box-shadow:var(--shadow);}
+.advisor-command-title{font-size:13px;font-weight:900;color:var(--text);margin-bottom:7px;}
+.advisor-command-sub{font-size:11px;color:var(--muted);line-height:1.45;}
+.advisor-status-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:10px;}
+.advisor-status{background:var(--card2);border:1px solid var(--border);border-radius:6px;padding:8px;min-height:58px;}
+.advisor-status span{display:block;font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;font-weight:800;}
+.advisor-status strong{display:block;margin-top:4px;font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.advisor-status small{display:block;margin-top:2px;font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.advisor-status.ok strong{color:var(--green);}
+.advisor-status.warn strong{color:var(--yellow);}
+.advisor-status.bad strong{color:var(--red);}
+.advisor-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-content:start;}
+.advisor-action{border:1px solid var(--border);background:var(--card2);color:var(--text);border-radius:6px;padding:10px;text-align:left;cursor:pointer;min-height:62px;}
+.advisor-action:hover{border-color:var(--accent);background:var(--hover);}
+.advisor-action strong{display:block;font-size:12px;color:var(--text);}
+.advisor-action span{display:block;font-size:10px;color:var(--muted);margin-top:4px;line-height:1.35;}
+@media(max-width:1000px){.advisor-command{grid-template-columns:1fr;}.advisor-status-grid{grid-template-columns:repeat(2,minmax(0,1fr));}}
+@media(max-width:650px){.advisor-status-grid,.advisor-actions{grid-template-columns:1fr;}.advisor-command{padding:10px;}}
 .sec-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);margin-bottom:10px;display:flex;align-items:center;gap:8px;}
 .sec-title::after{content:'';flex:1;height:1px;background:var(--border);}
 .card{background:var(--card);border:1px solid var(--border);border-radius:8px;overflow:hidden;box-shadow:var(--shadow);}
@@ -566,6 +584,25 @@ tr:hover td{background:var(--hover);transition:.12s;}
       <span id="whatsapp-sync-status" class="wa-sync-status">Feed not checked</span>
     </div>
   </div>
+
+  <section class="advisor-command" aria-label="NandaEdge Advisor command center">
+    <div>
+      <div class="advisor-command-title">Live Command Center</div>
+      <div class="advisor-command-sub">Online-first workflow: Schwab options through the secure Render API, Yahoo market intelligence for quotes/candles, and explicit validation for day-trade learning.</div>
+      <div class="advisor-status-grid">
+        <div id="cmd-api-status" class="advisor-status warn"><span>API</span><strong>Checking</strong><small>Render backend</small></div>
+        <div id="cmd-options-status" class="advisor-status ok"><span>Options</span><strong>Schwab First</strong><small>Tradier, then Yahoo fallback</small></div>
+        <div id="cmd-candles-status" class="advisor-status ok"><span>Candles</span><strong>Yahoo 1m/5m</strong><small>Manual or bounded watch</small></div>
+        <div id="cmd-accuracy-status" class="advisor-status warn"><span>Learning</span><strong>Pending</strong><small>Validate after market</small></div>
+      </div>
+    </div>
+    <div class="advisor-actions">
+      <button class="advisor-action" type="button" onclick="refreshActiveView()"><strong>Refresh Live Data</strong><span>Quotes, technicals, forecast, regime, and active view.</span></button>
+      <button class="advisor-action" type="button" onclick="quickScanOptions()"><strong>Scan Options</strong><span>Schwab-first 30 / 60 / 90 DTE candidates.</span></button>
+      <button class="advisor-action" type="button" onclick="setView('daytrade'); refreshDayTradeTab(true);"><strong>Day Trade Scan</strong><span>Small, mid, large-cap candle lanes plus core names.</span></button>
+      <button class="advisor-action" type="button" onclick="setView('daytrade'); validateDayTradeHistory();"><strong>Validate Learning</strong><span>Compare retained predictions with realized candles.</span></button>
+    </div>
+  </section>
 
 <!-- MACRO REGIME -->
 <div>
@@ -1061,6 +1098,58 @@ async function fetchJSON(path, timeoutMs=60000){
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } finally { clearTimeout(timer); }
+}
+
+function setCommandStatus(id, state, value, detail){
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.remove('ok','warn','bad');
+  el.classList.add(state || 'warn');
+  const strong = el.querySelector('strong');
+  const small = el.querySelector('small');
+  if (strong) strong.textContent = value || '—';
+  if (small) small.textContent = detail || '';
+}
+
+async function updateCommandCenterHealth(){
+  try {
+    const res = await fetch(`${API_BASE}/health`, { cache: 'no-store' });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.ok) {
+      setCommandStatus('cmd-api-status', 'ok', 'Online', data.authRequired ? 'Auth protected' : 'Open access');
+      return;
+    }
+    setCommandStatus('cmd-api-status', 'bad', `HTTP ${res.status}`, 'Render health check failed');
+  } catch(e) {
+    setCommandStatus('cmd-api-status', 'bad', 'Offline', 'Render not reachable');
+  }
+}
+
+function updateCommandCenterData(){
+  const days = Object.keys(SPEC_DAYTRADE?.history?.days || {}).sort();
+  const completed = days
+    .flatMap(d => SPEC_DAYTRADE.history.days[d].predictions || [])
+    .filter(x => ['exit_hit','invalid','triggered'].includes(x.outcome));
+  const lastDay = days[days.length - 1];
+  const state = completed.length ? 'ok' : 'warn';
+  const value = completed.length ? `${completed.length} Reviewed` : 'Pending';
+  const detail = lastDay ? `Latest retained day ${lastDay}` : 'Run Day Trade scan first';
+  setCommandStatus('cmd-accuracy-status', state, value, detail);
+
+  const providerSet = new Set();
+  Object.values(OPTS || {}).forEach(symData => {
+    Object.values(symData.byDte || {}).forEach(bucket => {
+      ['puts','calls','bullCalls'].forEach(k => {
+        const p = bucket?.[k]?.provider;
+        if (p) providerSet.add(p);
+      });
+    });
+  });
+  const providers = Array.from(providerSet);
+  if (providers.length) {
+    const first = providers.includes('schwab') ? 'Schwab Live' : providers[0].toUpperCase();
+    setCommandStatus('cmd-options-status', providers.includes('schwab') ? 'ok' : 'warn', first, `Provider: ${providers.join(', ')}`);
+  }
 }
 
 function symParam(){ return encodeURIComponent([...SYMS, ...MKT].join(',')); }
@@ -1933,6 +2022,7 @@ async function scanOptions(){
     // Re-render Top Setups with options data now available
     const map = {}; (lastQuotes || []).forEach(q => map[q.symbol] = q);
     renderTopSetups(map);
+    updateCommandCenterData();
   } catch(e) {
     body.innerHTML = `<div class="opt-err">Error: ${e.message || e}</div>`;
   } finally {
@@ -1941,6 +2031,12 @@ async function scanOptions(){
 }
 
 let lastQuotes = [];
+
+function quickScanOptions(){
+  setView('overview');
+  document.getElementById('options-candidates')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  scanOptions();
+}
 
 function firstCandidate(d){
   return d?.candidates?.[0] || null;
@@ -2498,6 +2594,7 @@ async function refreshDayTradeTab(force=false){
     try { renderDayTrade(); } catch(e){ console.warn('renderDayTrade', e); }
     try { renderSpeculativeDayTrade(); } catch(e){ console.warn('renderSpeculativeDayTrade', e); }
     try { renderDayTradeSummary(); } catch(e){ console.warn('renderDayTradeSummary', e); }
+    updateCommandCenterData();
   } finally {
     DAYTRADE_LOADING = false;
     if (btn) { btn.disabled = false; btn.textContent = validate ? 'Update + Validate' : 'Update Candles'; }
@@ -2517,6 +2614,7 @@ async function validateDayTradeHistory(){
     if (refreshEl) refreshEl.textContent = fmtRefreshTime(new Date());
     try { renderSpeculativeDayTrade(); } catch(e){ console.warn('renderSpeculativeDayTrade', e); }
     try { renderDayTradeSummary(); } catch(e){ console.warn('renderDayTradeSummary', e); }
+    updateCommandCenterData();
   } finally {
     DAYTRADE_LOADING = false;
     if (btn) { btn.disabled = false; btn.textContent = 'Validate History'; }
@@ -2548,6 +2646,7 @@ async function refresh(){
   try { renderWatchlist(map); } catch(e){ console.warn('renderWatchlist', e); }
   try { renderTradeCards(map); } catch(e){ console.warn('renderTradeCards', e); }
   try { renderForecast(map); } catch(e){ console.warn('renderForecast', e); }
+  updateCommandCenterData();
   document.getElementById('update-time').textContent = new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:true});
 
   // Earnings: non-blocking enrichment — re-render when it lands
@@ -2662,6 +2761,7 @@ function initThemeControls(){
 function bootDashboard(){
   if (_booted) return; _booted = true;
   initThemeControls();
+  updateCommandCenterHealth();
   renderOptionsFlow();
   renderAnalystFeed();
   renderNews();
@@ -2669,6 +2769,7 @@ function bootDashboard(){
   updateMarketStatus();
   setInterval(updateClock, 1000);
   setInterval(updateMarketStatus, 30000);
+  setInterval(updateCommandCenterHealth, 120000);
 
   document.getElementById('add-ticker-btn').addEventListener('click', addTickerFromInput);
   document.getElementById('add-ticker-input').addEventListener('keydown', e => { if (e.key === 'Enter') addTickerFromInput(); });
