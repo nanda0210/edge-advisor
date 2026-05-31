@@ -105,6 +105,21 @@ header{background:rgba(255,255,255,.92);border-bottom:1px solid var(--border);pa
 .advisor-action span{display:block;font-size:10px;color:var(--muted);margin-top:4px;line-height:1.35;}
 @media(max-width:1000px){.advisor-command{grid-template-columns:1fr;}.advisor-status-grid{grid-template-columns:repeat(2,minmax(0,1fr));}}
 @media(max-width:650px){.advisor-status-grid,.advisor-actions{grid-template-columns:1fr;}.advisor-command{padding:10px;}}
+.guide-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.guide-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:14px;box-shadow:var(--shadow);}
+.guide-card.wide{grid-column:1/-1;}
+.guide-card h3{margin:0 0 9px;font-size:13px;color:var(--text);}
+.guide-card p{margin:0 0 9px;color:var(--muted);font-size:12px;line-height:1.5;}
+.guide-card ul{margin:0;padding-left:18px;color:var(--muted);font-size:12px;line-height:1.55;}
+.guide-card li{margin:4px 0;}
+.guide-pill-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;}
+.guide-pill{border:1px solid var(--border);background:var(--card2);border-radius:999px;padding:5px 8px;font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;}
+.guide-flow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:10px;}
+.guide-step{border:1px solid var(--border);background:var(--card2);border-radius:6px;padding:10px;min-height:76px;}
+.guide-step strong{display:block;color:var(--text);font-size:12px;margin-bottom:5px;}
+.guide-step span{display:block;color:var(--muted);font-size:11px;line-height:1.35;}
+@media(max-width:900px){.guide-grid{grid-template-columns:1fr;}.guide-flow{grid-template-columns:repeat(2,minmax(0,1fr));}}
+@media(max-width:600px){.guide-flow{grid-template-columns:1fr;}}
 .sec-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);margin-bottom:10px;display:flex;align-items:center;gap:8px;}
 .sec-title::after{content:'';flex:1;height:1px;background:var(--border);}
 .card{background:var(--card);border:1px solid var(--border);border-radius:8px;overflow:hidden;box-shadow:var(--shadow);}
@@ -577,6 +592,7 @@ tr:hover td{background:var(--hover);transition:.12s;}
   <div class="dashboard-tabs" role="tablist" aria-label="NandaEdge dashboard views">
     <button id="tab-overview" class="dash-tab active" type="button" role="tab" aria-selected="true" data-view="overview">Overview</button>
     <button id="tab-daytrade" class="dash-tab" type="button" role="tab" aria-selected="false" data-view="daytrade">Day Trade</button>
+    <button id="tab-guide" class="dash-tab" type="button" role="tab" aria-selected="false" data-view="guide">User Guide</button>
     <div class="tab-note" id="tab-note">Day-trade candles update only on demand from the Day Trade tab.</div>
     <div class="wa-sync">
       <button id="whatsapp-sync-btn" class="wa-sync-btn" type="button" title="Scan Downloads for a WhatsApp group export and refresh the local Advisor feed">WhatsApp Sync</button>
@@ -603,6 +619,81 @@ tr:hover td{background:var(--hover);transition:.12s;}
       <button class="advisor-action" type="button" onclick="setView('daytrade'); validateDayTradeHistory();"><strong>Validate Learning</strong><span>Compare retained predictions with realized candles.</span></button>
     </div>
   </section>
+
+<!-- USER GUIDE -->
+<div class="guide-section" style="display:none;">
+  <div class="sec-title">User Guide</div>
+  <div class="guide-grid">
+    <div class="guide-card wide">
+      <h3>What NandaEdge Advisor Is</h3>
+      <p>NandaEdge Advisor is an online, read-only market intelligence dashboard. The website runs from GitHub Pages and connects to the secure Render API for live market data, options chains, candles, and day-trade validation.</p>
+      <div class="guide-pill-row">
+        <span class="guide-pill">Online Website</span>
+        <span class="guide-pill">Read Only</span>
+        <span class="guide-pill">No Trading</span>
+        <span class="guide-pill">No Account Access</span>
+        <span class="guide-pill">Server-Side Secrets</span>
+      </div>
+      <div class="guide-flow">
+        <div class="guide-step"><strong>1. Open Site</strong><span>Use the GitHub Pages website from any browser.</span></div>
+        <div class="guide-step"><strong>2. Unlock</strong><span>Enter the dashboard password when API auth is enabled.</span></div>
+        <div class="guide-step"><strong>3. Refresh</strong><span>Use Live Command Center for quotes, options, candles, and validation.</span></div>
+        <div class="guide-step"><strong>4. Review</strong><span>Check provider labels, confidence, exit rules, and why-this-trade notes.</span></div>
+      </div>
+    </div>
+    <div class="guide-card">
+      <h3>Main Features</h3>
+      <ul>
+        <li>Live Command Center for quick actions and system status.</li>
+        <li>Quotes, history, technicals, forecast, market regime, and fear/greed.</li>
+        <li>Schwab-first options chains with Tradier second and Yahoo fallback last.</li>
+        <li>30 / 60 / 90 DTE options candidates.</li>
+        <li>Cash-secured puts, covered calls, and bull call spreads.</li>
+        <li>AI confidence, trade rating, exit rule, and why-this-trade explanations.</li>
+      </ul>
+    </div>
+    <div class="guide-card">
+      <h3>Day Trade Workspace</h3>
+      <ul>
+        <li>Manual candle refresh to reduce server memory load.</li>
+        <li>Small-cap, mid-cap, and large-cap speculative lanes.</li>
+        <li>Top candle-variance names with entry, stop, exit, and timestamps in Pacific time.</li>
+        <li>7-day prediction history for comparing alerts against realized data.</li>
+        <li>After-market validation when you refresh or validate history.</li>
+      </ul>
+    </div>
+    <div class="guide-card">
+      <h3>Live Dependencies</h3>
+      <ul>
+        <li>GitHub Pages hosts the frontend website.</li>
+        <li>Render hosts the Python API at <strong>edge-advisor-api.onrender.com</strong>.</li>
+        <li>Yahoo/yfinance provides quotes, history, technicals, forecast, fear/greed, and candles.</li>
+        <li>Schwab Market Data provides options chains when server tokens are valid.</li>
+        <li>Tradier is optional backup when configured on the server.</li>
+      </ul>
+    </div>
+    <div class="guide-card">
+      <h3>No Local Setup For Normal Use</h3>
+      <ul>
+        <li>Use the public website directly for normal dashboard work.</li>
+        <li>No localhost is required for live use.</li>
+        <li>No local Python server is required for normal use.</li>
+        <li>Local setup is only for development, testing, or refreshing Schwab OAuth tokens.</li>
+        <li>Browser storage only keeps UI preferences and unlock state.</li>
+      </ul>
+    </div>
+    <div class="guide-card wide">
+      <h3>Security Rules</h3>
+      <p>Broker secrets, Schwab app credentials, access tokens, and refresh tokens must stay only in local <strong>.env</strong> files or Render environment variables. They must never be placed in GitHub Pages, source code, screenshots, logs, or documentation.</p>
+      <ul>
+        <li>NandaEdge Advisor does not place trades.</li>
+        <li>NandaEdge Advisor does not request account access.</li>
+        <li>NandaEdge Advisor does not read balances, orders, positions, or order previews.</li>
+        <li>All trading ideas are research signals, not guaranteed outcomes.</li>
+      </ul>
+    </div>
+  </div>
+</div>
 
 <!-- MACRO REGIME -->
 <div>
@@ -2548,7 +2639,7 @@ function updateClock(){
 }
 
 function setDashboardView(view){
-  const nextView = view === 'daytrade' ? 'daytrade' : 'overview';
+  const nextView = ['daytrade','guide'].includes(view) ? view : 'overview';
   if (ACTIVE_VIEW === 'daytrade' && nextView !== 'daytrade') {
     stopDayTradeWatch('Watch stopped · left Day Trade');
   }
@@ -2561,14 +2652,19 @@ function setDashboardView(view){
   document.querySelectorAll('.main > div').forEach(section => {
     if (section.classList.contains('dashboard-tabs')) return;
     const isDayTrade = section.classList.contains('daytrade-section');
+    const isGuide = section.classList.contains('guide-section');
     section.style.display = ACTIVE_VIEW === 'daytrade'
       ? (isDayTrade ? '' : 'none')
-      : (isDayTrade ? 'none' : '');
+      : ACTIVE_VIEW === 'guide'
+        ? (isGuide ? '' : 'none')
+        : (isDayTrade || isGuide ? 'none' : '');
   });
   const note = document.getElementById('tab-note');
   if (note) {
     note.textContent = ACTIVE_VIEW === 'daytrade'
       ? 'Day-trade candles update only when you click Update Candles or Refresh.'
+      : ACTIVE_VIEW === 'guide'
+        ? 'Live use needs GitHub Pages plus the Render API; no localhost is needed for normal use.'
       : 'Day-trade candles update only on demand from the Day Trade tab.';
   }
   if (ACTIVE_VIEW === 'daytrade') renderDayTradeIdle();
