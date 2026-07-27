@@ -7,11 +7,14 @@
 <style>
 :root {
   --bg:#eef3f8; --card:#ffffff; --card2:#f6f9fc; --border:#d5dee8;
-  --green:#12805c; --red:#c2413c; --yellow:#a66f00; --blue:#1769aa;
+  /* Site Review 001: aligned buy/sell/hold + action palette */
+  --green:#15884f; --red:#dc2626; --yellow:#d97706; --blue:#2563eb;
   --purple:#7550b8; --orange:#c76628; --teal:#0b7f83;
-  --text:#18212f; --muted:#627187; --accent:#1769aa;
+  --text:#18212f; --muted:#5a6a80; --accent:#2563eb;
   --bar:#dde8f3; --bar2:#e8eef5; --table:#f3f7fb; --hover:#e9f2fb;
   --input:#ffffff; --shadow:0 12px 32px rgba(24,33,47,.08);
+  /* Site Review 001: spacing scale */
+  --gap-section:24px; --gap-card:16px; --pad-card:14px;
 }
 body.theme-dark {
   --bg:#0d1117; --card:#161b22; --card2:#1c2128; --border:#30363d;
@@ -22,7 +25,7 @@ body.theme-dark {
   --input:#0d1117; --shadow:none;
 }
 *{box-sizing:border-box;margin:0;padding:0;}
-body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;font-size:14px;}
 body.theme-dark header{background:var(--card);box-shadow:none;backdrop-filter:none;}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -73,7 +76,7 @@ header{background:rgba(255,255,255,.92);border-bottom:1px solid var(--border);pa
 .fg-needle{width:3px;height:10px;background:#fff;border-radius:2px;position:absolute;top:-2px;transform:translateX(-50%);}
 
 /* LAYOUT */
-.main{padding:16px 20px;display:grid;gap:16px;}
+.main{padding:20px 24px;display:grid;gap:var(--gap-section);}
 .dashboard-tabs{display:flex;gap:8px;align-items:center;border-bottom:1px solid var(--border);padding-bottom:10px;position:sticky;top:0;z-index:80;background:var(--bg);}
 .dash-tab{background:var(--card2);border:1px solid var(--border);color:var(--muted);border-radius:6px;padding:8px 12px;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.8px;cursor:pointer;}
 .dash-tab:hover{border-color:var(--accent);color:var(--text);}
@@ -120,10 +123,23 @@ header{background:rgba(255,255,255,.92);border-bottom:1px solid var(--border);pa
 .guide-step span{display:block;color:var(--muted);font-size:11px;line-height:1.35;}
 @media(max-width:900px){.guide-grid{grid-template-columns:1fr;}.guide-flow{grid-template-columns:repeat(2,minmax(0,1fr));}}
 @media(max-width:600px){.guide-flow{grid-template-columns:1fr;}}
-.sec-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);margin-bottom:10px;display:flex;align-items:center;gap:8px;}
+.sec-title{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:1.2px;color:var(--text);margin-bottom:12px;display:flex;align-items:center;gap:8px;}
 .sec-title::after{content:'';flex:1;height:1px;background:var(--border);}
-.card{background:var(--card);border:1px solid var(--border);border-radius:8px;overflow:hidden;box-shadow:var(--shadow);}
-.card-hdr{padding:11px 16px;border-bottom:1px solid var(--border);font-weight:600;font-size:13px;display:flex;justify-content:space-between;align-items:center;}
+.card{background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:var(--shadow);transition:border-color .15s,transform .15s;}
+.card:hover{border-color:var(--accent);}
+.card-hdr{padding:12px 16px;border-bottom:1px solid var(--border);font-weight:700;font-size:14px;display:flex;justify-content:space-between;align-items:center;}
+
+/* ===== Site Review 001: tooltip / help-icon utility (Feature 3) ===== */
+.help{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;
+  background:var(--card2);border:1px solid var(--border);color:var(--muted);font-size:9px;font-weight:800;
+  cursor:help;margin-left:4px;line-height:1;position:relative;}
+[data-tip]{position:relative;cursor:help;}
+[data-tip]:hover::after{content:attr(data-tip);position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);
+  background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:7px 10px;font-size:11px;font-weight:500;
+  line-height:1.4;white-space:normal;width:max-content;max-width:240px;text-transform:none;letter-spacing:normal;
+  box-shadow:0 8px 24px rgba(0,0,0,.35);z-index:500;pointer-events:none;}
+[data-tip]:hover::before{content:'';position:absolute;bottom:calc(100% + 1px);left:50%;transform:translateX(-50%);
+  border:5px solid transparent;border-top-color:#30363d;z-index:500;}
 
 /* TABLE */
 table{width:100%;border-collapse:collapse;}
@@ -472,6 +488,51 @@ tr:hover td{background:var(--hover);transition:.12s;}
 #login-card .lg-msg{margin-top:14px;font-size:12px;text-align:center;min-height:18px;}
 #login-card .lg-msg.err{color:var(--red);} #login-card .lg-msg.ok{color:var(--green);}
 .app-locked{display:none !important;}
+
+/* ===== Site Review 001 - Feature 5 (beginner mode) + Feature 13 (mobile) ===== */
+.mode-toggle{display:flex;gap:0;border:1px solid var(--border);border-radius:6px;overflow:hidden;margin-left:8px;}
+.mode-toggle button{background:var(--card2);color:var(--muted);border:none;padding:5px 10px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;cursor:pointer;}
+.mode-toggle button.active{background:var(--accent);color:#fff;}
+body.beginner [data-adv="1"]{display:none !important;}
+body.beginner .beginner-hint{display:block;}
+.beginner-hint{display:none;margin:0 24px 4px;padding:8px 12px;border-radius:8px;background:rgba(37,99,235,.08);border:1px solid rgba(37,99,235,.25);color:var(--accent);font-size:12px;font-weight:600;}
+@media(max-width:760px){
+  .main{padding:12px 10px;gap:16px;}
+  .three-col{grid-template-columns:1fr !important;}
+  .macro-grid{grid-template-columns:1fr 1fr !important;}
+  table{display:block;overflow-x:auto;white-space:nowrap;}
+  .card-hdr{font-size:13px;padding:10px 12px;}
+  header{padding:8px 10px;flex-wrap:wrap;gap:6px;}
+  .sec-title{font-size:11px;}
+}
+
+/* ===== Site Review 001 - Feature 6 (sortable/sticky) + Feature 7 (heatmap) ===== */
+#watchlist-body{}
+.desk-table{max-height:640px;overflow:auto;}
+.desk-table thead th{position:sticky;top:0;z-index:5;}
+th.sortable{cursor:pointer;user-select:none;}
+th.sortable:hover{color:var(--accent);}
+th.sortable .arr{font-size:8px;opacity:.6;margin-left:2px;}
+td.heat{border-radius:4px;font-weight:700;}
+
+/* ===== Site Review 001 - Features 8,9,11,12: toolkit ===== */
+.ea-fab{position:fixed;right:18px;bottom:18px;display:flex;flex-direction:column;gap:8px;z-index:600;}
+.ea-fab button{width:auto;padding:9px 13px;border-radius:999px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:12px;font-weight:800;cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.25);}
+.ea-fab button:hover{border-color:var(--accent);color:var(--accent);}
+.ea-modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;padding:16px;z-index:700;}
+.ea-modal.open{display:flex;}
+.ea-box{background:var(--card);border:1px solid var(--border);border-radius:12px;max-width:760px;width:100%;max-height:86vh;overflow:auto;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.4);}
+.ea-box h3{font-size:16px;font-weight:800;margin-bottom:4px;}
+.ea-box .sub{font-size:12px;color:var(--muted);margin-bottom:12px;}
+.ea-in{background:var(--input);border:1px solid var(--border);border-radius:7px;color:var(--text);padding:8px 10px;font-size:13px;font-family:inherit;}
+.ea-btn{background:var(--accent);color:#fff;border:none;border-radius:7px;padding:8px 14px;font-size:12px;font-weight:800;cursor:pointer;}
+.ea-btn.ghost{background:var(--card2);color:var(--muted);border:1px solid var(--border);}
+.ea-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;}
+.ea-tbl{width:100%;border-collapse:collapse;font-size:13px;}
+.ea-tbl th,.ea-tbl td{border:1px solid var(--border);padding:8px 10px;text-align:left;}
+.ea-tbl th{background:var(--table);font-size:11px;text-transform:uppercase;color:var(--muted);}
+.ea-item{border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px;background:var(--card2);}
+.ea-x{float:right;cursor:pointer;color:var(--muted);font-size:18px;font-weight:800;line-height:1;}
 </style>
 </head>
 <body>
@@ -701,27 +762,27 @@ tr:hover td{background:var(--hover);transition:.12s;}
   <div class="card">
     <div class="macro-grid">
       <div class="macro-item">
-        <div class="macro-lbl">VIX Regime</div>
+        <div class="macro-lbl">VIX Regime<span class="help" data-tip="CBOE Volatility Index level. Low VIX = calm markets (all strategies valid); high VIX = fear/turbulence, favor defensive plays.">?</span></div>
         <div class="macro-val up" id="vix-regime">Normal</div>
         <div class="macro-sub" id="vix-sub">All strategies valid</div>
       </div>
       <div class="macro-item">
-        <div class="macro-lbl">Market Regime</div>
+        <div class="macro-lbl">Market Regime<span class="help" data-tip="Risk-On = investors favor stocks/growth; Risk-Off = they flee to safety (bonds, cash, gold).">?</span></div>
         <div class="macro-val" style="color:var(--blue);">Risk-On</div>
         <div class="macro-sub">Mid-cycle expansion</div>
       </div>
       <div class="macro-item">
-        <div class="macro-lbl">Yield Curve</div>
+        <div class="macro-lbl">Yield Curve<span class="help" data-tip="2yr vs 10yr Treasury yield gap. Flat/inverted (short > long) often precedes a slowdown; steep = expansion.">?</span></div>
         <div class="macro-val nt">Flat</div>
         <div class="macro-sub">2Y/10Y spread: +12bps</div>
       </div>
       <div class="macro-item">
-        <div class="macro-lbl">Fed Stance</div>
+        <div class="macro-lbl">Fed Stance<span class="help" data-tip="Federal Reserve policy direction. Hold = rates unchanged; Hike = tightening; Cut = easing (usually bullish for stocks).">?</span></div>
         <div class="macro-val" style="color:var(--yellow);">Hold</div>
         <div class="macro-sub">FOMC: May 7, 2026</div>
       </div>
       <div class="macro-item">
-        <div class="macro-lbl">Cycle Stage</div>
+        <div class="macro-lbl">Cycle Stage<span class="help" data-tip="Where we are in the economic cycle: Early (recovery) → Mid (steady growth) → Late (peak) → Recession.">?</span></div>
         <div class="macro-val" style="color:var(--blue);">Mid Cycle</div>
         <div class="macro-sub">Tech &amp; Industrials leading</div>
       </div>
@@ -731,7 +792,7 @@ tr:hover td{background:var(--hover);transition:.12s;}
         <div class="macro-sub">Slight multinational headwind</div>
       </div>
       <div class="macro-item">
-        <div class="macro-lbl">Portfolio Heat</div>
+        <div class="macro-lbl">Portfolio Heat<span class="help" data-tip="How much of your capital is exposed to risk right now. Higher heat = larger potential swings.">?</span></div>
         <div class="macro-val nt">MEDIUM</div>
         <div class="macro-sub">~9% total risk deployed</div>
       </div>
@@ -896,7 +957,7 @@ tr:hover td{background:var(--hover);transition:.12s;}
           <th></th>
         </tr>
       </thead>
-      <tbody id="watchlist-body">
+      <tbody id="watchlist-body" data-sortable="1">
         <tr class="loading-row"><td colspan="13"><span class="spinner"></span>Fetching live prices from Yahoo Finance...</td></tr>
       </tbody>
     </table>
@@ -914,7 +975,7 @@ tr:hover td{background:var(--hover);transition:.12s;}
 
 <!-- PRICE FORECAST -->
 <div>
-  <div class="sec-title">Price Forecast — Statistical Projection (GBM)</div>
+  <div class="sec-title">Price Forecast — Statistical Projection (GBM)<span class="help" data-tip="Geometric Brownian Motion: projects a range of future prices from historical daily returns and volatility. A probability estimate, not a guarantee.">?</span></div>
   <div class="card">
     <div class="card-hdr">
       <span>Geometric Brownian Motion projection from 2yr daily log-returns</span>
@@ -940,7 +1001,7 @@ tr:hover td{background:var(--hover);transition:.12s;}
           <th>5 Years</th>
         </tr>
       </thead>
-      <tbody id="forecast-body">
+      <tbody id="forecast-body" data-heatmap="1">
         <tr class="loading-row"><td colspan="10"><span class="spinner"></span>Computing forecasts...</td></tr>
       </tbody>
     </table>
@@ -2934,6 +2995,237 @@ document.getElementById('login-pw-toggle').addEventListener('click', () => {
     if (ok) return;
   }
   showLogin('');
+})();
+</script>
+
+<!-- ===== Site Review 001 - Feature 4: collapsible sections ===== -->
+<script>
+(function(){
+  function key(t){return 'sec-collapsed:'+t.textContent.trim().slice(0,40);}
+  function sibs(title){var out=[],n=title.nextElementSibling;
+    while(n && !n.classList.contains('sec-title')){out.push(n);n=n.nextElementSibling;}return out;}
+  function apply(title,c){sibs(title).forEach(function(el){el.style.display=c?'none':'';});
+    var ch=title.querySelector('.sec-chev'); if(ch)ch.textContent=c?'\u25B8':'\u25BE';}
+  function init(){
+    document.querySelectorAll('.sec-title').forEach(function(title){
+      if(title.dataset.collapsible)return; title.dataset.collapsible='1';
+      title.style.cursor='pointer'; title.style.userSelect='none';
+      var ch=document.createElement('span'); ch.className='sec-chev'; ch.textContent='\u25BE';
+      ch.style.cssText='margin-right:2px;font-size:11px;color:var(--muted);';
+      title.insertBefore(ch,title.firstChild);
+      if(localStorage.getItem(key(title))==='1')apply(title,true);
+      title.addEventListener('click',function(e){
+        if(e.target.closest('.help'))return;
+        var now=localStorage.getItem(key(title))!=='1';
+        localStorage.setItem(key(title),now?'1':'0'); apply(title,now);
+      });
+    });
+  }
+  if(document.readyState!=='loading')init(); else document.addEventListener('DOMContentLoaded',init);
+  setTimeout(init,1200);
+})();
+</script>
+
+<!-- ===== Site Review 001 - Feature 5: Beginner/Advanced toggle ===== -->
+<script>
+(function(){
+  var ADV=['Price Forecast','Unusual Options Flow','Risk Dashboard','Daily Trade Plans','Analyst Activity','Day Trade Workspace'];
+  function tagAdvanced(){
+    document.querySelectorAll('.sec-title').forEach(function(t){
+      var txt=t.textContent; if(ADV.some(function(a){return txt.indexOf(a)>=0;})){
+        t.setAttribute('data-adv','1');
+        var n=t.nextElementSibling;
+        while(n && !n.classList.contains('sec-title')){n.setAttribute('data-adv','1');n=n.nextElementSibling;}
+      }
+    });
+  }
+  function setMode(m){
+    document.body.classList.toggle('beginner',m==='beginner');
+    localStorage.setItem('ea-mode',m);
+    var b=document.getElementById('mode-beg'),a=document.getElementById('mode-adv');
+    if(b&&a){b.classList.toggle('active',m==='beginner');a.classList.toggle('active',m!=='beginner');}
+  }
+  function init(){
+    tagAdvanced();
+    var tabs=document.querySelector('.dashboard-tabs'); if(tabs && !document.getElementById('mode-beg')){
+      var wrap=document.createElement('div'); wrap.className='mode-toggle';
+      wrap.innerHTML='<button id="mode-beg" type="button">Beginner</button><button id="mode-adv" type="button">Advanced</button>';
+      tabs.appendChild(wrap);
+      document.getElementById('mode-beg').onclick=function(){setMode('beginner');};
+      document.getElementById('mode-adv').onclick=function(){setMode('advanced');};
+    }
+    if(!document.querySelector('.beginner-hint')){
+      var h=document.createElement('div'); h.className='beginner-hint';
+      h.textContent='Beginner mode: showing the essentials (signals, watchlist, market health). Switch to Advanced for forecasts, options flow, and risk analytics.';
+      var main=document.querySelector('.main'); if(main)main.parentNode.insertBefore(h,main);
+    }
+    setMode(localStorage.getItem('ea-mode')||'advanced');
+  }
+  if(document.readyState!=='loading')init(); else document.addEventListener('DOMContentLoaded',init);
+  setTimeout(init,1300);
+})();
+</script>
+
+<!-- ===== Site Review 001 - Feature 6 & 7: table sort + GBM heatmap ===== -->
+<script>
+(function(){
+  function num(t){var m=(t||'').replace(/[,$%]/g,'').match(/-?\d+(\.\d+)?/);return m?parseFloat(m[0]):null;}
+  function makeSortable(tbodyId){
+    var tb=document.getElementById(tbodyId); if(!tb)return;
+    var tbl=tb.closest('table'); if(!tbl||tbl.dataset.sortInit)return; tbl.dataset.sortInit='1';
+    var ths=tbl.querySelectorAll('thead th');
+    ths.forEach(function(th,i){
+      if(!th.textContent.trim())return;
+      th.classList.add('sortable');
+      var arr=document.createElement('span'); arr.className='arr'; th.appendChild(arr);
+      th.addEventListener('click',function(){
+        var asc=th.dataset.asc!=='1'; th.dataset.asc=asc?'1':'0';
+        ths.forEach(function(o){if(o!==th){var a=o.querySelector('.arr');if(a)a.textContent='';}});
+        arr.textContent=asc?'\u25B2':'\u25BC';
+        var rows=[].slice.call(tb.querySelectorAll('tr')).filter(function(r){return !r.querySelector('.loading-row,.spinner') && r.children.length>i;});
+        rows.sort(function(a,b){
+          var ta=a.children[i].textContent.trim(),tb2=b.children[i].textContent.trim();
+          var na=num(ta),nb=num(tb2);
+          if(na!==null&&nb!==null)return asc?na-nb:nb-na;
+          return asc?ta.localeCompare(tb2):tb2.localeCompare(ta);
+        });
+        rows.forEach(function(r){tb.appendChild(r);});
+      });
+    });
+  }
+  function heatmap(){
+    var tb=document.getElementById('forecast-body'); if(!tb)return;
+    tb.querySelectorAll('td').forEach(function(td){
+      var m=td.textContent.match(/([+-]?\d+(?:\.\d+)?)%/);
+      if(!m)return; var v=parseFloat(m[1]);
+      if(isNaN(v)||Math.abs(v)<0.01){td.classList.remove('heat');td.style.background='';return;}
+      var a=Math.min(Math.abs(v)/15,1)*0.32;
+      td.classList.add('heat');
+      td.style.background=v>0?'rgba(34,197,94,'+a+')':'rgba(220,38,38,'+a+')';
+    });
+  }
+  function init(){
+    makeSortable('watchlist-body');
+    heatmap();
+    var fb=document.getElementById('forecast-body');
+    if(fb && !fb.dataset.obs){fb.dataset.obs='1';new MutationObserver(heatmap).observe(fb,{childList:true,subtree:true});}
+    var wb=document.getElementById('watchlist-body');
+    if(wb && !wb.dataset.obs){wb.dataset.obs='1';new MutationObserver(function(){makeSortable('watchlist-body');}).observe(wb,{childList:true});}
+  }
+  if(document.readyState!=='loading')init(); else document.addEventListener('DOMContentLoaded',init);
+  setTimeout(init,1500);
+})();
+</script>
+
+<!-- ===== Site Review 001 - Features 8,9,11,12: Compare / Alerts / Journal / Calendar ===== -->
+<script>
+(function(){
+  var LS={get:function(k,d){try{return JSON.parse(localStorage.getItem(k))||d;}catch(e){return d;}},set:function(k,v){localStorage.setItem(k,JSON.stringify(v));}};
+  function el(tag,attrs,html){var e=document.createElement(tag);if(attrs)for(var k in attrs)e.setAttribute(k,attrs[k]);if(html!=null)e.innerHTML=html;return e;}
+  function modal(id){var m=document.getElementById(id);m.classList.add('open');}
+  function closeAll(){document.querySelectorAll('.ea-modal').forEach(function(m){m.classList.remove('open');});}
+
+  // scrape current watchlist rows for tickers + key metrics (Feature 8)
+  function watchData(){
+    var tb=document.getElementById('watchlist-body'); if(!tb)return [];
+    return [].slice.call(tb.querySelectorAll('tr')).filter(function(r){return r.children.length>10 && !r.querySelector('.spinner');}).map(function(r){
+      var c=r.children;
+      return {sym:c[0].textContent.trim().split('\n')[0], price:c[1].textContent.trim(), chg:c[2].textContent.trim(),
+              rsi:c[5].textContent.trim(), trend:c[6].textContent.trim(), signal:c[10]?c[10].textContent.trim():'', star:c[11]?c[11].textContent.trim():''};
+    });
+  }
+
+  // ---------- Feature 8: Comparison ----------
+  function renderCompare(){
+    var d=watchData(); var box=document.getElementById('cmp-body');
+    if(!d.length){box.innerHTML='<div class="sub">Watchlist still loading — open this again in a moment.</div>';return;}
+    var chosen=LS.get('ea-cmp',d.slice(0,3).map(function(x){return x.sym;}));
+    var chips=d.map(function(x){var on=chosen.indexOf(x.sym)>=0;return '<button class="ea-btn '+(on?'':'ghost')+'" data-sym="'+x.sym+'" style="margin:2px">'+x.sym+'</button>';}).join('');
+    var sel=d.filter(function(x){return chosen.indexOf(x.sym)>=0;}).slice(0,4);
+    var rows=[['Price','price'],['Change','chg'],['RSI','rsi'],['Trend','trend'],['Signal','signal'],['Rating','star']];
+    var tbl='<table class="ea-tbl"><tr><th>Metric</th>'+sel.map(function(x){return '<th>'+x.sym+'</th>';}).join('')+'</tr>'+
+      rows.map(function(rw){return '<tr><td>'+rw[0]+'</td>'+sel.map(function(x){return '<td>'+(x[rw[1]]||'—')+'</td>';}).join('')+'</tr>';}).join('')+'</table>';
+    box.innerHTML='<div class="sub">Pick 2–4 tickers to compare side by side.</div><div class="ea-row">'+chips+'</div>'+tbl;
+    box.querySelectorAll('[data-sym]').forEach(function(b){b.onclick=function(){
+      var sym=b.dataset.sym,i=chosen.indexOf(sym);
+      if(i>=0)chosen.splice(i,1); else if(chosen.length<4)chosen.push(sym);
+      LS.set('ea-cmp',chosen); renderCompare();
+    };});
+  }
+
+  // ---------- Feature 9: Smart Alerts ----------
+  function checkAlerts(){
+    var d=watchData(),al=LS.get('ea-alerts',[]),hit=0;
+    al.forEach(function(a){var row=d.find(function(x){return x.sym===a.sym;});if(!row){a.status='';return;}
+      var price=parseFloat(row.price.replace(/[,$]/g,''));a.last=price;
+      a.status=(a.dir==='above'&&price>=a.val)||(a.dir==='below'&&price<=a.val)?'TRIGGERED':'watching';
+      if(a.status==='TRIGGERED')hit++;});
+    LS.set('ea-alerts',al);return hit;
+  }
+  function renderAlerts(){
+    checkAlerts();var al=LS.get('ea-alerts',[]);var box=document.getElementById('alr-body');
+    box.innerHTML='<div class="sub">Get notified when a price target is crossed (checked live against the watchlist).</div>'+
+      '<div class="ea-row"><input class="ea-in" id="alr-sym" placeholder="Ticker" style="width:90px"><select class="ea-in" id="alr-dir"><option value="above">rises above</option><option value="below">falls below</option></select><input class="ea-in" id="alr-val" type="number" placeholder="price" style="width:100px"><button class="ea-btn" id="alr-add">Add alert</button></div>'+
+      (al.length?al.map(function(a,i){return '<div class="ea-item"><span class="ea-x" data-del="'+i+'">×</span><b>'+a.sym+'</b> '+a.dir+' $'+a.val+' — <span style="color:'+(a.status==='TRIGGERED'?'var(--green)':'var(--muted)')+';font-weight:800">'+(a.status||'watching')+'</span>'+(a.last?' <span style="color:var(--muted)">(now $'+a.last+')</span>':'')+'</div>';}).join(''):'<div class="sub">No alerts yet.</div>');
+    document.getElementById('alr-add').onclick=function(){
+      var sym=document.getElementById('alr-sym').value.trim().toUpperCase(),val=parseFloat(document.getElementById('alr-val').value),dir=document.getElementById('alr-dir').value;
+      if(!sym||isNaN(val))return; al.push({sym:sym,dir:dir,val:val}); LS.set('ea-alerts',al); renderAlerts(); updateBadge();
+    };
+    box.querySelectorAll('[data-del]').forEach(function(x){x.onclick=function(){al.splice(+x.dataset.del,1);LS.set('ea-alerts',al);renderAlerts();updateBadge();};});
+  }
+  function updateBadge(){var n=checkAlerts();var b=document.getElementById('fab-alerts');if(b)b.textContent=n?('🔔 Alerts ('+n+')'):'🔔 Alerts';}
+
+  // ---------- Feature 11: Trade Journal ----------
+  function renderJournal(){
+    var j=LS.get('ea-journal',[]);var box=document.getElementById('jrn-body');
+    var wins=j.filter(function(t){return t.result==='win';}).length,closed=j.filter(function(t){return t.result;}).length;
+    box.innerHTML='<div class="sub">Log trades with your rationale. Win rate: <b>'+(closed?Math.round(100*wins/closed)+'%':'—')+'</b> ('+wins+'/'+closed+' closed).</div>'+
+      '<div class="ea-row"><input class="ea-in" id="jr-sym" placeholder="Ticker" style="width:80px"><select class="ea-in" id="jr-act"><option>BUY</option><option>SELL</option></select><input class="ea-in" id="jr-px" type="number" placeholder="price" style="width:90px"><input class="ea-in" id="jr-why" placeholder="rationale" style="flex:1;min-width:140px"><button class="ea-btn" id="jr-add">Log</button></div>'+
+      (j.length?j.map(function(t,i){return '<div class="ea-item"><span class="ea-x" data-del="'+i+'">×</span><b>'+t.act+' '+t.sym+'</b> @ $'+t.px+' <span style="color:var(--muted)">'+t.date+'</span><br><span style="color:var(--muted);font-size:12px">'+(t.why||'')+'</span><div style="margin-top:6px"><button class="ea-btn ghost" data-win="'+i+'">Win</button> <button class="ea-btn ghost" data-loss="'+i+'">Loss</button> '+(t.result?('<b style="color:'+(t.result==='win'?'var(--green)':'var(--red)')+'">'+t.result.toUpperCase()+'</b>'):'')+'</div></div>';}).join(''):'<div class="sub">No trades logged yet.</div>');
+    document.getElementById('jr-add').onclick=function(){
+      var sym=document.getElementById('jr-sym').value.trim().toUpperCase();if(!sym)return;
+      j.unshift({sym:sym,act:document.getElementById('jr-act').value,px:document.getElementById('jr-px').value,why:document.getElementById('jr-why').value,date:new Date().toISOString().slice(0,10)});
+      LS.set('ea-journal',j);renderJournal();
+    };
+    box.querySelectorAll('[data-del]').forEach(function(x){x.onclick=function(){j.splice(+x.dataset.del,1);LS.set('ea-journal',j);renderJournal();};});
+    box.querySelectorAll('[data-win]').forEach(function(x){x.onclick=function(){j[+x.dataset.win].result='win';LS.set('ea-journal',j);renderJournal();};});
+    box.querySelectorAll('[data-loss]').forEach(function(x){x.onclick=function(){j[+x.dataset.loss].result='loss';LS.set('ea-journal',j);renderJournal();};});
+  }
+
+  // ---------- Feature 12: Market Calendar ----------
+  function renderCalendar(){
+    var ev=LS.get('ea-cal',null);
+    if(!ev){ev=[{d:'2026-08-27',t:'NVDA Earnings (est.)'},{d:'2026-07-30',t:'FOMC Rate Decision'},{d:'2026-08-01',t:'Jobs Report (NFP)'},{d:'2026-08-15',t:'Options Expiration'}];LS.set('ea-cal',ev);}
+    ev.sort(function(a,b){return a.d.localeCompare(b.d);});
+    var box=document.getElementById('cal-body');
+    var today=new Date().toISOString().slice(0,10);
+    box.innerHTML='<div class="sub">Upcoming events that can move your holdings.</div>'+
+      '<div class="ea-row"><input class="ea-in" id="cal-d" type="date" style="width:150px"><input class="ea-in" id="cal-t" placeholder="event" style="flex:1;min-width:160px"><button class="ea-btn" id="cal-add">Add</button></div>'+
+      ev.map(function(e,i){var days=Math.round((new Date(e.d)-new Date(today))/864e5);return '<div class="ea-item"><span class="ea-x" data-del="'+i+'">×</span><b>'+e.d+'</b> — '+e.t+' <span style="color:'+(days<=7&&days>=0?'var(--yellow)':'var(--muted)')+'">'+(days<0?'past':days===0?'today':'in '+days+'d')+'</span></div>';}).join('');
+    document.getElementById('cal-add').onclick=function(){var d=document.getElementById('cal-d').value,t=document.getElementById('cal-t').value.trim();if(!d||!t)return;ev.push({d:d,t:t});LS.set('ea-cal',ev);renderCalendar();};
+    box.querySelectorAll('[data-del]').forEach(function(x){x.onclick=function(){ev.splice(+x.dataset.del,1);LS.set('ea-cal',ev);renderCalendar();};});
+  }
+
+  function mk(id,title,sub){
+    var m=el('div',{'class':'ea-modal','id':id});
+    m.innerHTML='<div class="ea-box"><span class="ea-x" data-close="1">×</span><h3>'+title+'</h3><div id="'+id.replace('m-','')+'-body"></div></div>';
+    m.addEventListener('click',function(e){if(e.target===m||e.target.dataset.close)closeAll();});
+    document.body.appendChild(m); return m;
+  }
+  function init(){
+    if(document.querySelector('.ea-fab'))return;
+    mk('m-cmp','📊 Compare stocks'); mk('m-alr','🔔 Smart alerts'); mk('m-jrn','📓 Trade journal'); mk('m-cal','📅 Market calendar');
+    var fab=el('div',{'class':'ea-fab'});
+    fab.innerHTML='<button id="fab-cmp">📊 Compare</button><button id="fab-alerts">🔔 Alerts</button><button id="fab-jrn">📓 Journal</button><button id="fab-cal">📅 Calendar</button>';
+    document.body.appendChild(fab);
+    document.getElementById('fab-cmp').onclick=function(){renderCompare();modal('m-cmp');};
+    document.getElementById('fab-alerts').onclick=function(){renderAlerts();modal('m-alr');};
+    document.getElementById('fab-jrn').onclick=function(){renderJournal();modal('m-jrn');};
+    document.getElementById('fab-cal').onclick=function(){renderCalendar();modal('m-cal');};
+    updateBadge(); setInterval(updateBadge,60000);
+  }
+  if(document.readyState!=='loading')init(); else document.addEventListener('DOMContentLoaded',init);
+  setTimeout(init,1600);
 })();
 </script>
 </div><!-- /#app-root -->
