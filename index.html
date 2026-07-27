@@ -685,74 +685,139 @@ td.heat{border-radius:4px;font-weight:700;}
 <div class="guide-section" style="display:none;">
   <div class="sec-title">User Guide</div>
   <div class="guide-grid">
+
     <div class="guide-card wide">
-      <h3>What NandaEdge Advisor Is</h3>
-      <p>NandaEdge Advisor is an online, read-only market intelligence dashboard. The website runs from GitHub Pages and connects to the secure Render API for live market data, options chains, candles, and day-trade validation.</p>
+      <h3>What NandaEdge Advisor Is — and Isn't</h3>
+      <p>NandaEdge Advisor is a <strong>read-only market intelligence dashboard</strong>. It pulls live quotes, technicals, options chains, and statistical forecasts, then packages them into plain-English trade ideas. Think of it as a research analyst that never sleeps — it surfaces <em>what looks interesting and why</em>, but every decision (and every actual trade) stays with you.</p>
       <div class="guide-pill-row">
-        <span class="guide-pill">Online Website</span>
-        <span class="guide-pill">Read Only</span>
-        <span class="guide-pill">No Trading</span>
+        <span class="guide-pill">Research Only</span>
+        <span class="guide-pill">Never Places Trades</span>
         <span class="guide-pill">No Account Access</span>
-        <span class="guide-pill">Server-Side Secrets</span>
+        <span class="guide-pill">Live Market Data</span>
+        <span class="guide-pill">Educational</span>
       </div>
       <div class="guide-flow">
-        <div class="guide-step"><strong>1. Open Site</strong><span>Use the GitHub Pages website from any browser.</span></div>
-        <div class="guide-step"><strong>2. Unlock</strong><span>Enter the dashboard password when API auth is enabled.</span></div>
-        <div class="guide-step"><strong>3. Refresh</strong><span>Use Live Command Center for quotes, options, candles, and validation.</span></div>
-        <div class="guide-step"><strong>4. Review</strong><span>Check provider labels, confidence, exit rules, and why-this-trade notes.</span></div>
+        <div class="guide-step"><strong>1. Open &amp; Unlock</strong><span>Load the site, enter the password if prompted. Everything runs in your browser.</span></div>
+        <div class="guide-step"><strong>2. Scan the Top</strong><span>Market Health, macro regime, and Today's Top Setups tell you the overall backdrop.</span></div>
+        <div class="guide-step"><strong>3. Study a Stock</strong><span>Open a stock card: signal, technicals, swing plan, options play, AI read.</span></div>
+        <div class="guide-step"><strong>4. Decide &amp; Act</strong><span>Use the numbers as one input. Place any trade yourself, at your broker.</span></div>
       </div>
     </div>
-    <div class="guide-card">
-      <h3>Main Features</h3>
+
+    <div class="guide-card wide">
+      <h3>New: Beginner Mode, Collapsible Sections &amp; Toolbar</h3>
+      <p>Two view modes sit in the tab bar. <strong>Beginner</strong> hides the heavy analytics (forecasts, options flow, risk, day-trade) so you see just the essentials; <strong>Advanced</strong> shows everything. Click any <strong>section title</strong> to collapse or expand it — the layout remembers your choices. Hover the small <strong>“?” icons</strong> for instant explanations of any term.</p>
       <ul>
-        <li>Live Command Center for quick actions and system status.</li>
-        <li>Quotes, history, technicals, forecast, market regime, and fear/greed.</li>
-        <li>Schwab-first options chains with Tradier second and Yahoo fallback last.</li>
-        <li>30 / 60 / 90 DTE options candidates.</li>
-        <li>Cash-secured puts, covered calls, and bull call spreads.</li>
-        <li>AI confidence, trade rating, exit rule, and why-this-trade explanations.</li>
+        <li><strong>📊 Compare</strong> — pick 2–4 watchlist tickers and see signal, RSI, trend, and rating side by side.</li>
+        <li><strong>🔔 Alerts</strong> — set price-target alerts; the badge flags any that have triggered against live prices.</li>
+        <li><strong>📓 Journal</strong> — log your trades with a rationale, mark win/loss, and track your win rate over time.</li>
+        <li><strong>📅 Calendar</strong> — earnings, Fed meetings, data releases, and options-expiry dates that can move your holdings.</li>
       </ul>
     </div>
+
+    <div class="guide-card">
+      <h3>How to Read a Stock Card</h3>
+      <p>Each stock card is a mini research report, top to bottom:</p>
+      <ul>
+        <li><strong>Header</strong> — price, day change, analyst tip, price target, and short interest.</li>
+        <li><strong>SA Factor Grades</strong> — Value, Growth, Profitability, Momentum, Revisions (A = best, F = worst).</li>
+        <li><strong>Technical Snapshot</strong> — trend, RSI, MACD, Bollinger, VWAP, ATR, support/resistance.</li>
+        <li><strong>Swing Trade</strong> — a 2–10 day plan: entry zone, two targets, and a stop, derived from ATR and S/R.</li>
+        <li><strong>Options Play</strong> — a suggested strategy with strikes, expiry/DTE, and the Greeks.</li>
+        <li><strong>AI Trade Intelligence</strong> — a blended read: confidence, risk, suggested DTE, win probability.</li>
+      </ul>
+    </div>
+
+    <div class="guide-card">
+      <h3>Signals, Scores &amp; the Color Scale</h3>
+      <p>Wherever you see a confidence or quality score, the color tells you the read at a glance — higher is better:</p>
+      <ul>
+        <li><span style="color:#16a34a;font-weight:800;">Green (70+)</span> — strong, well-aligned setup.</li>
+        <li><span style="color:#eab308;font-weight:800;">Yellow (55–69)</span> — mixed; some signals conflict.</li>
+        <li><span style="color:#f97316;font-weight:800;">Orange (45–54)</span> — weak; caution warranted.</li>
+        <li><span style="color:#dc2626;font-weight:800;">Red (&lt;45)</span> — poor alignment; likely avoid.</li>
+      </ul>
+      <p style="margin-top:8px;"><strong>★ Stars</strong> rate overall conviction (1–5). <strong>Smart Score</strong> (0–10) blends technicals, analyst view, and momentum. <strong>Signal</strong> (Buy/Hold/Sell) is the headline call. Price change uses classic green-up / red-down and is <em>separate</em> from the quality scale.</p>
+    </div>
+
+    <div class="guide-card">
+      <h3>Market &amp; Macro Regime</h3>
+      <p>The macro panel is the weather report for the whole market — it sets the odds before any single stock:</p>
+      <ul>
+        <li><strong>VIX Regime</strong> — the market's fear gauge. Calm = strategies work as expected; spiking = defensive.</li>
+        <li><strong>Risk-On / Risk-Off</strong> — are investors chasing growth, or fleeing to safety (bonds, cash)?</li>
+        <li><strong>Yield Curve</strong> — 2yr vs 10yr gap. Flat/inverted often precedes slowdowns; steep = expansion.</li>
+        <li><strong>Fed Stance</strong> — Hold / Hike / Cut. Cuts are usually a tailwind for stocks.</li>
+        <li><strong>Cycle Stage</strong> — Early → Mid → Late → Recession; different sectors lead each stage.</li>
+      </ul>
+    </div>
+
+    <div class="guide-card">
+      <h3>Price Forecast (GBM) Explained</h3>
+      <p><strong>Geometric Brownian Motion</strong> is a standard statistical model that projects a <em>range</em> of future prices from a stock's historical daily returns and volatility. The table shows expected moves over 1 week to 6 months, color-shaded by magnitude (green up, red down).</p>
+      <ul>
+        <li>It is a <strong>probability estimate, not a prediction</strong> — the future path is uncertain.</li>
+        <li>Wider ranges mean higher volatility (more risk and more opportunity).</li>
+        <li>Best used to sanity-check targets and size positions, not as a guarantee.</li>
+      </ul>
+    </div>
+
+    <div class="guide-card">
+      <h3>Options Strategies, in Plain English</h3>
+      <ul>
+        <li><strong>Cash-Secured Put</strong> — you get paid a premium for agreeing to buy the stock cheaper. Mildly bullish / income.</li>
+        <li><strong>Covered Call</strong> — you own the stock and sell a call for income, capping upside. Neutral / income.</li>
+        <li><strong>Bull Call Spread</strong> — buy a call, sell a higher one; cheaper, defined-risk bullish bet.</li>
+        <li><strong>Long Call</strong> — leveraged bullish bet; higher risk, higher reward.</li>
+        <li><strong>Iron Condor</strong> — profits if the stock stays in a range. Neutral / low-volatility.</li>
+      </ul>
+      <p style="margin-top:8px;"><strong>DTE</strong> = days to expiration. <strong>IV Rank</strong> = how expensive options are vs their own history (high IV favors selling premium).</p>
+    </div>
+
     <div class="guide-card">
       <h3>Day Trade Workspace</h3>
       <ul>
-        <li>Manual candle refresh to reduce server memory load.</li>
-        <li>Small-cap, mid-cap, and large-cap speculative lanes.</li>
-        <li>Top candle-variance names with entry, stop, exit, and timestamps in Pacific time.</li>
-        <li>7-day prediction history for comparing alerts against realized data.</li>
-        <li>After-market validation when you refresh or validate history.</li>
+        <li>Candles refresh <strong>on demand</strong> (not continuously) to keep the server light.</li>
+        <li>Small-, mid-, and large-cap speculative lanes highlight the most <em>active</em> names.</li>
+        <li>Each idea lists entry, stop, exit, and timestamps in Pacific time.</li>
+        <li>A 7-day prediction history lets you compare past alerts against what actually happened.</li>
+        <li>After-hours validation scores yesterday's calls so you can judge reliability.</li>
       </ul>
     </div>
-    <div class="guide-card">
-      <h3>Live Dependencies</h3>
-      <ul>
-        <li>GitHub Pages hosts the frontend website.</li>
-        <li>Render hosts the Python API at <strong>edge-advisor-api.onrender.com</strong>.</li>
-        <li>Yahoo/yfinance provides quotes, history, technicals, forecast, fear/greed, and candles.</li>
-        <li>Schwab Market Data provides options chains when server tokens are valid.</li>
-        <li>Tradier is optional backup when configured on the server.</li>
-      </ul>
-    </div>
-    <div class="guide-card">
-      <h3>No Local Setup For Normal Use</h3>
-      <ul>
-        <li>Use the public website directly for normal dashboard work.</li>
-        <li>No localhost is required for live use.</li>
-        <li>No local Python server is required for normal use.</li>
-        <li>Local setup is only for development, testing, or refreshing Schwab OAuth tokens.</li>
-        <li>Browser storage only keeps UI preferences and unlock state.</li>
-      </ul>
-    </div>
+
     <div class="guide-card wide">
-      <h3>Security Rules</h3>
-      <p>Broker secrets, Schwab app credentials, access tokens, and refresh tokens must stay only in local <strong>.env</strong> files or Render environment variables. They must never be placed in GitHub Pages, source code, screenshots, logs, or documentation.</p>
-      <ul>
-        <li>NandaEdge Advisor does not place trades.</li>
-        <li>NandaEdge Advisor does not request account access.</li>
-        <li>NandaEdge Advisor does not read balances, orders, positions, or order previews.</li>
-        <li>All trading ideas are research signals, not guaranteed outcomes.</li>
+      <h3>Glossary — Key Terms</h3>
+      <ul style="columns:2;column-gap:24px;">
+        <li><strong>RSI (14)</strong> — momentum 0–100. Above 70 overbought, below 30 oversold.</li>
+        <li><strong>MACD</strong> — trend-momentum crossover; bull cross = upward shift, bear cross = downward.</li>
+        <li><strong>VWAP</strong> — volume-weighted average price; above = intraday strength.</li>
+        <li><strong>ATR (14)</strong> — average daily range in dollars; a volatility / stop-sizing gauge.</li>
+        <li><strong>Bollinger Bands</strong> — volatility envelope; a “squeeze” often precedes a big move.</li>
+        <li><strong>EMA 9/20/50/200</strong> — moving averages; stacked upward = healthy uptrend.</li>
+        <li><strong>Support / Resistance</strong> — price floors and ceilings from recent history.</li>
+        <li><strong>Delta / Theta / Vega</strong> — option sensitivity to price / time-decay / volatility.</li>
+        <li><strong>Short Interest</strong> — % of shares sold short; high = crowded bearish bet (squeeze risk).</li>
+        <li><strong>Analyst PT</strong> — a firm's 12-month price target.</li>
       </ul>
     </div>
+
+    <div class="guide-card">
+      <h3>Data Sources &amp; Freshness</h3>
+      <ul>
+        <li>Frontend hosted on <strong>GitHub Pages</strong>; API on <strong>Render</strong>.</li>
+        <li>Quotes, history, technicals, forecast, and fear/greed via Yahoo / yfinance.</li>
+        <li>Options chains: Schwab first, Tradier second, Yahoo as fallback.</li>
+        <li>Watchlist auto-refreshes about every 60s; day-trade candles refresh only on demand.</li>
+        <li>Provider labels on each card show exactly where the data came from.</li>
+      </ul>
+    </div>
+
+    <div class="guide-card wide">
+      <h3>Security &amp; Disclaimer</h3>
+      <p>Broker secrets, Schwab credentials, and tokens live <strong>only</strong> in local <strong>.env</strong> files or Render environment variables — never in GitHub Pages, source, screenshots, logs, or docs. The dashboard <strong>does not place trades, request account access, or read balances, orders, or positions.</strong></p>
+      <p style="color:var(--yellow);margin-top:6px;"><strong>Not financial advice.</strong> Every signal, score, forecast, and AI read is research and education only — not a recommendation or a guarantee of outcomes. Markets carry risk; do your own diligence and consider a licensed advisor before trading.</p>
+    </div>
+
   </div>
 </div>
 
