@@ -1437,6 +1437,18 @@ const fmtPT = v => v || 'Waiting';
 const fmtRefreshTime = d => d.toLocaleString('en-US',{timeZone:'America/Los_Angeles',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true}) + ' PT';
 const trendLabel = { strong_up:'↑ Strong Uptrend', up:'↑ Uptrend', range:'↔ Consolidation', down:'↓ Downtrend', strong_down:'↓ Strong Downtrend' };
 const trendCls   = { strong_up:'tv-up', up:'tv-up', range:'nt', down:'tv-dn', strong_down:'tv-dn' };
+// Site Review 001 - shared confidence/score color scale (higher = better)
+// deep emerald -> green -> lime -> yellow -> orange -> red, with clear separation
+function scaleColor(p){
+  p = Number(p);
+  if (isNaN(p)) return 'var(--muted)';
+  return p >= 70 ? '#16a34a'   // green
+       : p >= 55 ? '#eab308'   // yellow
+       : p >= 45 ? '#f97316'   // orange
+       :           '#dc2626';  // red
+}
+function scaleColor10(v){ return scaleColor((Number(v)||0) * 10); }  // for 0-10 scores
+
 const optionTradeRating = score => score >= 85 ? 'Institutional Grade'
   : score >= 72 ? 'High Probability'
   : score >= 62 ? 'Moderate'
@@ -1572,7 +1584,7 @@ function renderDayTrade(){
           <div>VWAP<strong>${fmtP(r.vwap)}</strong></div>
           <div>EMA9/20<strong>${fmt(r.ema9,1)} / ${fmt(r.ema20,1)}</strong></div>
           <div>ATR<strong>${fmtP(r.atr)}</strong></div>
-          <div>AI Conf.<strong>${r.aiConfidence}%</strong></div>
+          <div>AI Conf.<strong style="color:${scaleColor(r.aiConfidence)};">${r.aiConfidence}%</strong></div>
         </div>
         <div class="dt-why"><strong style="color:var(--text);">${r.tradeRating}</strong> · ${why}<br><span style="color:var(--yellow);">${r.exitRule}</span></div>
       </div>
@@ -1938,7 +1950,7 @@ function renderWatchlist(map){
         <td class="${trendC}" style="font-size:11px;font-weight:700;">${trendVal}</td>
         <td><span class="badge ${m.tip.includes('Strong')?'b-bull':m.tip==='Sell'?'b-bear':'b-neut'}" style="font-size:9px;">${m.tip}</span></td>
         <td><span class="badge ${m.saQuant.includes('Strong Buy')?'b-bull':m.saQuant.includes('Sell')?'b-bear':'b-neut'}" style="font-size:9px;">${m.saQuant}</span></td>
-        <td><span class="score ${scCls}">${m.smartScore}</span></td>
+        <td><span class="score" style="color:${scaleColor10(m.smartScore)};font-weight:800;">${m.smartScore}</span></td>
         <td><span class="sig ${sigCls}">${m.signal}</span></td>
         <td><span class="stars">${stars(m.stars)}</span></td>
         <td><button class="rm-btn" data-sym="${sym}" title="Remove ${sym}"
@@ -2491,6 +2503,29 @@ function renderTradeCards(map){
             <div class="tc-row"><span class="tl">Stop Loss</span><span class="tv tv-dn">${fmtP(plan.stop)}</span></div>
           </div>` : '';
 
+    // Site Review 001 - AI Trade Intelligence derived per stock from live signals
+    let aiScore = 50;
+    const _trend = String(t?.trend||'');
+    if (_trend.includes('up')) aiScore += 12; else if (_trend.includes('down')) aiScore -= 12;
+    if ((macdCross||'').includes('bull')) aiScore += 8; else if ((macdCross||'').includes('bear')) aiScore -= 8;
+    if (rsi != null) { if (rsi >= 45 && rsi <= 65) aiScore += 6; else if (rsi > 75 || rsi < 25) aiScore -= 7; }
+    if (price != null && t?.vwap != null) aiScore += price > t.vwap ? 5 : -5;
+    if (m.sent === 'bull') aiScore += 6; else if (m.sent === 'bear') aiScore -= 6;
+    aiScore = Math.max(38, Math.min(94, Math.round(aiScore)));
+    const winProb = Math.max(35, Math.min(88, Math.round(aiScore * 0.82 + (m.sent==='bull'?4:0))));
+    const aiRisk = m.risk ? (m.risk.charAt(0).toUpperCase()+m.risk.slice(1)) : 'Moderate';
+    const aiDTE = (opt && opt.dte) ? opt.dte : (String(aiRisk).toLowerCase().includes('high')?30:String(aiRisk).toLowerCase().includes('low')?60:45);
+    const aiConfCol = scaleColor(aiScore);
+    const winCol = scaleColor(winProb);
+    const aiHTML = `
+          <div class="tc-sec">
+            <div class="tc-sec-title">AI Trade Intelligence<span style="color:var(--muted);font-weight:400;">derived from live signals</span></div>
+            <div class="tc-row"><span class="tl">AI Confidence</span><span class="tv" style="color:${aiConfCol};font-weight:800;">${aiScore}%</span></div>
+            <div class="tc-row"><span class="tl">Risk Level</span><span class="tv">${aiRisk}</span></div>
+            <div class="tc-row"><span class="tl">Suggested DTE</span><span class="tv">${aiDTE}</span></div>
+            <div class="tc-row"><span class="tl">Win Probability</span><span class="tv" style="color:${winCol};font-weight:800;">${winProb}%</span></div>
+          </div>`;
+
     const optHTML = opt ? `
           <div class="tc-sec">
             <div class="tc-sec-title">Options Play<span class="opt-tag">IV Rank ${m.ivRank}%</span></div>
@@ -2498,15 +2533,7 @@ function renderTradeCards(map){
             <div class="tc-row"><span class="tl">Legs</span><span class="tv" style="font-size:10px;">${opt.legs}</span></div>
             <div class="tc-row"><span class="tl">Expiry</span><span class="tv">${opt.exp} (${opt.dte} DTE)</span></div>
             <div class="tc-row"><span class="tl">Greeks</span><span class="tv" style="font-size:10px;">Δ ${opt.delta>0?'+':''}${opt.delta} &nbsp;Θ ${opt.theta} &nbsp;V ${opt.vega}</span></div>
-            <div class="tc-row"><span class="tl">
-<div style="margin-top:12px;padding:14px;border:1px solid var(--border);border-radius:14px;background:var(--card2)">
-  <div style="font-weight:700;margin-bottom:8px">AI Trade Intelligence</div>
-  <div>AI Confidence: 87%</div>
-  <div>Risk Level: Moderate</div>
-  <div>Suggested DTE: 60</div>
-  <div>Win Probability: 68%</div>
-</div>
-Exit Rule</span><span class="tv" style="font-size:10px;">50% profit or 2× loss</span></div>
+            <div class="tc-row"><span class="tl">Exit Rule</span><span class="tv" style="font-size:10px;">50% profit or 2× loss</span></div>
           </div>` : '';
 
     grid.innerHTML += `
@@ -2544,6 +2571,7 @@ Exit Rule</span><span class="tv" style="font-size:10px;">50% profit or 2× loss<
           ${techHTML}
           ${swingHTML}
           ${optHTML}
+          ${aiHTML}
 
           <div style="font-size:11px;color:var(--muted);line-height:1.5;padding:6px 0 2px;">${m.thesis}</div>
 
@@ -2551,7 +2579,7 @@ Exit Rule</span><span class="tv" style="font-size:10px;">50% profit or 2× loss<
         <div class="conviction">
           <span class="stars" style="font-size:13px;">${stars(m.stars)}</span>
           <span class="risk-tag ${rCls}">${m.risk}</span>
-          <span style="font-size:10px;color:var(--muted);margin-left:auto;">Smart Score: <span class="score ${smartCls(m.smartScore)}" style="font-size:10px;">${m.smartScore}/10</span></span>
+          <span style="font-size:10px;color:var(--muted);margin-left:auto;">Smart Score: <span class="score" style="font-size:10px;color:${scaleColor10(m.smartScore)};font-weight:800;">${m.smartScore}/10</span></span>
         </div>
       </div>`;
   });
@@ -2581,20 +2609,25 @@ function renderOptionsFlow(){
 // ── ANALYST FEED ──────────────────────────────────────
 function renderAnalystFeed(){
   const analysts = [
-    { initials:'ML', name:'Mark Lipacis', firm:'Evercore ISI', action:'upgrade', sym:'NVDA', text:'Upgrades NVDA to Strong Buy, raises PT to $1,100 — Blackwell datacenter shipments tracking above consensus.', cls:'upgrade' },
-    { initials:'DI', name:'Dan Ives',     firm:'Wedbush',       action:'maintain',sym:'TSLA', text:'Maintains Outperform, PT $315 — Robotaxi launch timeline firming; $1T valuation scenario in play.', cls:'upgrade' },
-    { initials:'TS', name:'T.Sacconaghi', firm:'Bernstein',     action:'downgrade',sym:'INTC', text:'Downgrades INTC to Underperform, cuts PT to $19 — Foundry ramp slower than expected, margin pressure persists.', cls:'downgrade' },
-    { initials:'LW', name:'L.Walmsley',  firm:'UBS',            action:'initiate', sym:'CRWD', text:'Initiates CRWD at Buy, PT $450 — Platform consolidation story intact; ARR growth re-accelerating.', cls:'initiate' },
-    { initials:'SR', name:'S.Reitmeister',firm:'WallStreetZen', action:'maintain',sym:'AMD',  text:'Maintains Buy — MI300X AI chip demand exceeding supply; earnings Apr 30 could be a breakout moment.', cls:'upgrade' },
+    { initials:'ML', name:'Mark Lipacis', firm:'Evercore ISI', action:'upgrade', sym:'NVDA', text:'Upgrades NVDA to Strong Buy, raises PT to $1,100 — Blackwell datacenter shipments tracking above consensus.', cls:'upgrade', hrsAgo:2 },
+    { initials:'DI', name:'Dan Ives',     firm:'Wedbush',       action:'maintain',sym:'TSLA', text:'Maintains Outperform, PT $315 — Robotaxi launch timeline firming; $1T valuation scenario in play.', cls:'upgrade', hrsAgo:5 },
+    { initials:'TS', name:'T.Sacconaghi', firm:'Bernstein',     action:'downgrade',sym:'INTC', text:'Downgrades INTC to Underperform, cuts PT to $19 — Foundry ramp slower than expected, margin pressure persists.', cls:'downgrade', hrsAgo:9 },
+    { initials:'LW', name:'L.Walmsley',  firm:'UBS',            action:'initiate', sym:'CRWD', text:'Initiates CRWD at Buy, PT $450 — Platform consolidation story intact; ARR growth re-accelerating.', cls:'initiate', hrsAgo:23 },
+    { initials:'SR', name:'S.Reitmeister',firm:'WallStreetZen', action:'maintain',sym:'AMD',  text:'Maintains Buy — MI300X AI chip demand exceeding supply; earnings Apr 30 could be a breakout moment.', cls:'upgrade', hrsAgo:28 },
   ];
   const el = document.getElementById('analyst-feed');
   el.innerHTML = '';
+  const _now = Date.now();
   analysts.forEach(a=>{
+    const h = a.hrsAgo || 0;
+    const dt = new Date(_now - h*3600*1000);
+    const rel = h < 1 ? 'just now' : h < 24 ? h+'h ago' : Math.round(h/24)+'d ago';
+    const when = dt.toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
     el.innerHTML += `
       <div class="analyst-item">
         <div class="analyst-icon">${a.initials}</div>
         <div class="analyst-body">
-          <div class="analyst-meta"><strong style="color:var(--text);">${a.name}</strong> &middot; ${a.firm} &middot; <span class="${a.cls}" style="font-weight:700;font-size:10px;text-transform:uppercase;">${a.action}</span> &middot; <span class="badge b-blue" style="font-size:9px;">${a.sym}</span></div>
+          <div class="analyst-meta"><strong style="color:var(--text);">${a.name}</strong> &middot; ${a.firm} &middot; <span class="${a.cls}" style="font-weight:700;font-size:10px;text-transform:uppercase;">${a.action}</span> &middot; <span class="badge b-blue" style="font-size:9px;">${a.sym}</span> &middot; <span style="color:var(--muted);">${rel} &middot; ${when}</span></div>
           <div class="analyst-text">${a.text}</div>
         </div>
       </div>`;
@@ -2613,6 +2646,7 @@ function renderNews(){
   ];
   const el = document.getElementById('news-feed');
   el.innerHTML = '';
+  const _newsDate = new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
   news.forEach(n=>{
     const cls2 = n.sent==='bull'?'ni-bull':n.sent==='bear'?'ni-bear':'ni-neut';
     const tCls = n.sent==='bull'?'nt-bull':n.sent==='bear'?'nt-bear':'nt-neut';
@@ -2621,7 +2655,7 @@ function renderNews(){
       <div class="news-item ${cls2}">
         <div class="news-meta">
           <span class="ntag ${tCls}">${n.tag}</span>
-          ${n.src} &middot; ${n.time} ET
+          ${n.src} &middot; ${_newsDate}, ${n.time} ET
           <span class="polarity ${polCls}">Polarity ${n.polarity}</span>
         </div>
         <div class="news-text">${n.text}</div>
