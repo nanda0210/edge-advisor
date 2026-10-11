@@ -16,6 +16,17 @@ API endpoints (all accept `?symbols=NVDA,TSLA,...`):
 - `GET /history?symbols=...&days=90` — daily closes for sparklines (cached 30 min)
 - `GET /earnings?symbols=...` — next earnings date + DTE per ticker (cached 24 hr)
 - `GET /feargreed` — CNN Fear & Greed (cached 10 min)
+- `GET /accuracy[?validate=0]` — historical hit rate of past Day Trade predictions: current ISO week vs previous week, week-over-week delta in points, all-time, and an 8-week trend. Scores only *resolved* predictions (`exit_hit` = win, `invalid` = loss); unresolved ones are excluded, never counted as wins. Suppresses the percentage below `MIN_ACCURACY_SAMPLE` resolved predictions. `validate=0` reads stored outcomes without a provider call.
+
+**Scoring is point-in-time.** A prediction is graded only against bars *strictly after* its `signalTsUTC`, within a forward window (`FORWARD_WINDOW_MINUTES`, 0 = to session close). Grading against the whole session's high/low counts price action from before the signal existed and manufactures stop-outs that never happened. Within the window, whichever of exit/stop is touched **first** decides; a single bar spanning both resolves as a **stop**, never a win. Predictions with no post-signal bars are reported `unscoreable` rather than graded.
+
+**Expectancy is the primary metric, not win rate.** Win rate is gameable — shrink the target toward the stop and it rises while profitability falls. `/accuracy` reports `expectancyR` (average R per resolved trade, net of `COST_BPS` round-trip cost), `profitFactor`, `rewardRisk`, and `breakevenWinPct` alongside `accuracyPct`.
+
+**Breakdowns** slice expectancy by `confidence`, `rating`, `session` (time-of-day), `vixRegime`, `bias`, and `symbol`, plus a `walkForward` in-sample vs out-of-sample split (`OUT_OF_SAMPLE_DAYS`) — a positive in-sample paired with a negative out-of-sample is the signature of fitting noise. Calibration notes state plainly whether higher `aiConfidence` actually produces better outcomes.
+
+Retention: raw predictions prune after `DAYTRADE_HISTORY_DAYS` (7, matching Yahoo's 1m history limit), but per-day tallies **and R sums** are absorbed into a durable rollup *before* each prune and kept for `ACCURACY_RETENTION_DAYS` (400), so week-over-week and expectancy survive pruning. Saturday/Sunday-dated predictions are excluded entirely and disclosed as `excludedWeekendPredictions`.
+
+Scoring env vars: `FORWARD_WINDOW_MINUTES`, `COST_BPS` (10), `MIN_STOP_ATR_MULT` (0.5), `MIN_MINUTES_TO_CLOSE` (30), `MIN_ACCURACY_SAMPLE` (5), `OUT_OF_SAMPLE_DAYS` (3), `ACCURACY_SYMBOL_LIMIT` (40), `DAYTRADE_HISTORY_FILE`.
 
 ---
 
@@ -132,6 +143,8 @@ git push
 | ⚠️ Backend unreachable | Render service sleeping | Wait 30–60s and refresh |
 | Frontend loads but no data | Backend down or CORS broke | Check https://edge-advisor-api.onrender.com/quotes directly |
 | `HTTP 500` from `/technicals` | yfinance rate-limited | Cache holds 5 min; try again later |
+| Intraday candles empty + provider error mentions `guce.yahoo.com` | DNS/ad-block (Pi-hole/NextDNS) blocking Yahoo consent host | Whitelist `guce.yahoo.com` or temporarily use a non-filtering DNS during after-market validation runs |
+| `/speculative-daytrade` history shows weekend dates with weekday candle timestamps | Scan ran on a non-trading day; Yahoo returns last trading session candles | Newer builds store predictions under the candle session’s Pacific trading date (`predictionDay`) to avoid mislabeling history |
 | Page 404 on github.io | Pages not enabled | Settings → Pages → Source: `main` / `/ (root)` |
 | Backend 500 on Render after push | Build failed | Check Render dashboard → Logs |
 
