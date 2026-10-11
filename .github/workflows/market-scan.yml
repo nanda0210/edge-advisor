@@ -1,0 +1,120 @@
+name: Market-hours scan
+
+# Point-in-time scoring can only grade a prediction against bars that come
+# AFTER its signal. A scan run after the close always takes the session's final
+# 1-minute candle as its signal, leaving zero forward bars — which is why every
+# stored prediction so far is unscoreable. These runs fire mid-session so the
+# predictions have runway, then validate after the close.
+#
+# Times are UTC and cron has no DST awareness, so each slot is chosen to land
+# inside 06:30-13:00 PT under BOTH PDT (UTC-7) and PST (UTC-8).
+#   16:00 UTC -> 09:00 PDT / 08:00 PST   (mid-morning)
+#   18:00 UTC -> 11:00 PDT / 10:00 PST   (midday)
+#   22:00 UTC -> 15:00 PDT / 14:00 PST   (after the close -> validate)
+
+on:
+  schedule:
+    - cron: "0 16 * * 1-5"
+    - cron: "0 18 * * 1-5"
+    - cron: "0 22 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      validate:
+        description: "Also validate stored predictions (after-market pass)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: market-scan
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Decide whether this run validates
+        id: mode
+        run: |
+          # The 22:00 UTC slot is the after-close pass; the others are live scans.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "validate=${{ inputs.validate }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.schedule }}" = "0 22 * * 1-5" ]; then
+            echo "validate=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "validate=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Wake the backend
+        # Render's free tier sleeps; the first request can take ~60s to cold start.
+        run: |
+          for i in 1 2 3 4 5; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 90 \
+                   "$API/health" || echo 000)
+            echo "attempt $i: /health -> $code"
+            [ "$code" = "200" ] && exit 0
+            sleep 20
+          done
+          echo "::error::backend did not become healthy"
+          exit 1
+        env:
+          API: ${{ vars.API_BASE_URL || 'https://edge-advisor-api.onrender.com' }}
+
+      - name: Run the scan
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::AUTH_TOKEN_HASH secret is not set. Add it under"
+            echo "::error::Settings -> Secrets and variables -> Actions."
+            exit 1
+          fi
+          url="$API/speculative-daytrade?limit=5"
+          if [ "$VALIDATE" = "true" ]; then url="$url&validate=1"; fi
+          echo "GET $url"
+          code=$(curl -sS --max-time 240 -H "Authorization: Bearer $TOKEN" \
+                 -o response.json -w '%{http_code}' "$url")
+          echo "HTTP $code"
+          if [ "$code" != "200" ]; then
+            echo "::error::scan failed with HTTP $code"
+            head -c 500 response.json || true
+            exit 1
+          fi
+        env:
+          API: ${{ vars.API_BASE_URL || 'https://edge-advisor-api.onrender.com' }}
+          TOKEN: ${{ secrets.AUTH_TOKEN_HASH }}
+          VALIDATE: ${{ steps.mode.outputs.validate }}
+
+      - name: Summarize
+        if: success()
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          d = json.load(open("response.json"))
+          res = d.get("results") or []
+          print(f"### Scan: {len(res)} setups · prediction day `{d.get('predictionDay')}`\n")
+          late = [r for r in res if r.get("lateSignal")]
+          print(f"- Signals with usable runway: **{len(res) - len(late)} / {len(res)}**")
+          if res:
+              mins = [r.get("minutesToClose") for r in res
+                      if isinstance(r.get("minutesToClose"), (int, float))]
+              if mins:
+                  print(f"- Minutes to close (min/max): {min(mins)} / {max(mins)}")
+          acc = d.get("accuracy") or {}
+          a = acc.get("allTime") or {}
+          fmt = lambda v, suf: "—" if v is None else f"{v}{suf}"
+          print(f"- Scored so far: **{a.get('resolved', 0)}** resolved "
+                f"({a.get('wins', 0)} exit-first / {a.get('losses', 0)} stop-first), "
+                f"{a.get('unscoreable', 0)} unscoreable")
+          print(f"- Expectancy: **{fmt(a.get('expectancyR'), 'R')}** · "
+                f"hit rate {fmt(a.get('accuracyPct'), '%')} "
+                f"({a.get('verdict', 'no verdict')})")
+          for w in d.get("warnings") or []:
+              print(f"- :warning: {w}")
+          PY
+
+      - name: Upload payload
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scan-${{ github.run_id }}
+          path: response.json
+          retention-days: 7
+          if-no-files-found: ignore

@@ -1418,7 +1418,8 @@ async function fetchSpecDayTrade(validate=false){
   try {
     SPEC_DAYTRADE = await fetchJSON(`/speculative-daytrade?limit=5${validate ? '&validate=1' : ''}`, validate ? 120000 : 70000);
   } catch(e){
-    SPEC_DAYTRADE = { results: [], activeAlerts: [], history: {days:{}}, learningNotes: [e.message] };
+    SPEC_DAYTRADE = { results: [], activeAlerts: [], history: {days:{}}, accuracy: null,
+                      warnings: [], learningNotes: [e.message] };
   }
 }
 function pacificParts(dt=new Date()){
@@ -1663,12 +1664,44 @@ function statusCls(status){
   return 'alert-active';
 }
 
-function summarizeSuccessRate(predictions){
-  const completed = (predictions || []).filter(x => ['exit_hit','invalid'].includes(x.outcome));
-  const wins = completed.filter(x => x.outcome === 'exit_hit').length;
-  const losses = completed.filter(x => x.outcome === 'invalid').length;
-  const rate = completed.length ? Math.round((wins / completed.length) * 100) : null;
-  return { completed: completed.length, wins, losses, rate };
+// Accuracy is computed server-side and read from the payload. Recomputing it
+// here would disagree with the backend: the server scores point-in-time (only
+// bars after each signal), resolves which of exit/stop was touched FIRST, and
+// excludes unscoreable and weekend-dated rows. A client-side tally over raw
+// outcomes cannot reproduce any of that.
+function accuracyBlock(){ return SPEC_DAYTRADE?.accuracy || null; }
+
+// Server-supplied strings (verdicts, notes, warnings, provider errors) go into
+// innerHTML, and they legitimately contain '<' — e.g. "insufficient sample
+// (<5 resolved)", which the parser otherwise eats as an unterminated tag.
+function esc(v){
+  if (v === null || v === undefined) return '';
+  return String(v)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function fmtR(v){
+  if (v === null || v === undefined) return '—';
+  return `${v > 0 ? '+' : ''}${Number(v).toFixed(2)}R`;
+}
+
+function fmtPct(v){
+  return (v === null || v === undefined) ? 'Pending' : `${v}%`;
+}
+
+// Expectancy is the primary metric: hit rate alone rises when targets shrink
+// toward the stop, so it can improve while profitability falls.
+function expectancyLabel(block){
+  if (!block) return { value: '—', note: 'No scan yet' };
+  const all = block.allTime || {};
+  if (all.expectancyR === null || all.expectancyR === undefined) {
+    return { value: 'Pending', note: esc(all.verdict || `needs ${block.minSample} resolved`) };
+  }
+  return {
+    value: fmtR(all.expectancyR),
+    note: `${fmtPct(all.accuracyPct)} hit rate · ${all.resolved} resolved · net of ${block.costBps}bps`,
+  };
 }
 
 function renderDayTradeSummary(){
@@ -1677,21 +1710,14 @@ function renderDayTradeSummary(){
   const core = (DAYTRADE?.results || []).filter(r => !r.error);
   const spec = SPEC_DAYTRADE?.results || [];
   const active = SPEC_DAYTRADE?.activeAlerts || [];
-  const days = Object.keys(SPEC_DAYTRADE?.history?.days || {}).sort();
-  const todayKey = pacificDateKey();
-  const priorDays = days.filter(d => d < todayKey).slice(-7);
-  const previousDay = priorDays[priorDays.length - 1];
-  const prevStats = previousDay ? summarizeSuccessRate(SPEC_DAYTRADE.history.days[previousDay].predictions || []) : null;
   const lastSignal = active[0]?.signalTimePST || active[0]?.entryTimePST || spec[0]?.signalTimePST || core[0]?.signalTimePST || 'Waiting';
-  const success = prevStats?.completed ? `${prevStats.rate}%` : 'Pending';
-  const successNote = prevStats?.completed
-    ? `${prevStats.wins} exits hit / ${prevStats.losses} invalidated`
-    : 'Runs after market validation';
+  const block = accuracyBlock();
+  const exp = expectancyLabel(block);
   el.innerHTML = `
     <div class="dt-kpi"><span>Last Signal</span><strong>${fmtPT(lastSignal)}</strong><small>Pacific market time</small></div>
     <div class="dt-kpi"><span>Active Alerts</span><strong>${active.length}</strong><small>${spec.length} speculative setups scanned</small></div>
     <div class="dt-kpi"><span>Core Setups</span><strong>${core.length}</strong><small>NVDA, AMD, IONQ 5-min candles</small></div>
-    <div class="dt-kpi"><span>Previous Day</span><strong>${success}</strong><small>${successNote}</small></div>`;
+    <div class="dt-kpi"><span>Expectancy</span><strong>${exp.value}</strong><small>${exp.note}</small></div>`;
 }
 
 function renderDayTradeIdle(){
@@ -1831,27 +1857,62 @@ function renderSpeculativeDayTrade(){
     </div>`).join('') : '<div class="dt-empty" style="padding:8px;">No active alerts. Invalidated setups were removed.</div>';
 
   const days = Object.keys(SPEC_DAYTRADE?.history?.days || {}).sort();
-  const todayKey = pacificDateKey();
-  const priorDays = days.filter(d => d < todayKey).slice(-7);
-  const previousDay = priorDays[priorDays.length - 1];
-  const prevStats = previousDay ? summarizeSuccessRate(SPEC_DAYTRADE.history.days[previousDay].predictions || []) : null;
-  const weekStats = summarizeSuccessRate(priorDays.flatMap(d => SPEC_DAYTRADE.history.days[d].predictions || []));
-  const successSummary = previousDay && prevStats?.completed
-    ? `<div><strong style="color:var(--text);">Previous day ${previousDay}:</strong> ${prevStats.rate}% success · ${prevStats.wins} exits hit / ${prevStats.losses} invalidated</div>`
-    : '<div><strong style="color:var(--text);">Previous day:</strong> waiting for after-market validation data</div>';
-  const weekSummary = weekStats.completed
-    ? `<div><strong style="color:var(--text);">Last ${priorDays.length} retained day(s):</strong> ${weekStats.rate}% success · ${weekStats.wins} exits hit / ${weekStats.losses} invalidated</div>`
-    : '<div><strong style="color:var(--text);">Last 7 days:</strong> no completed validation outcomes yet</div>';
-  learning.innerHTML = [successSummary, weekSummary]
-    .concat((SPEC_DAYTRADE?.learningNotes || []).map(note => `<div>• ${note}</div>`))
-    .join('');
-  const completed = days
-    .flatMap(d => SPEC_DAYTRADE.history.days[d].predictions || [])
-    .filter(x => ['exit_hit','invalid','triggered'].includes(x.outcome));
-  const exits = completed.filter(x => x.outcome === 'exit_hit').length;
-  const invalid = completed.filter(x => x.outcome === 'invalid').length;
+  const block = accuracyBlock();
+  const learnRows = [];
+
+  // Scan warnings first — late signals and noise-range stops are actionable
+  // now, unlike the historical stats below them.
+  (SPEC_DAYTRADE?.warnings || []).forEach(w => learnRows.push(
+    `<div style="color:var(--warn,#e0a030);">⚠ ${esc(w)}</div>`
+  ));
+
+  if (block) {
+    const cur = block.currentWeek || {}, prev = block.previousWeek || {}, all = block.allTime || {};
+    const delta = block.weekOverWeekDeltaPts;
+    learnRows.push(
+      `<div><strong style="color:var(--text);">This week (${esc(cur.week || '—')}):</strong> ` +
+      `${fmtPct(cur.accuracyPct)} hit rate · ${fmtR(cur.expectancyR)} expectancy · ${cur.resolved || 0} resolved</div>`
+    );
+    learnRows.push(
+      `<div><strong style="color:var(--text);">Previous week (${esc(prev.week || '—')}):</strong> ` +
+      `${fmtPct(prev.accuracyPct)} hit rate · ${fmtR(prev.expectancyR)} expectancy · ${prev.resolved || 0} resolved` +
+      (delta === null || delta === undefined ? '' : ` · <strong>${delta > 0 ? '+' : ''}${delta} pts</strong> week over week`) +
+      `</div>`
+    );
+    if (all.breakevenWinPct !== null && all.breakevenWinPct !== undefined) {
+      learnRows.push(
+        `<div><strong style="color:var(--text);">Geometry:</strong> ${all.rewardRisk}:1 reward/risk — ` +
+        `needs only <strong>${all.breakevenWinPct}%</strong> wins to break even, so hit rate alone is the wrong target.</div>`
+      );
+    }
+    const wf = block.walkForward || {};
+    const wfIn = wf.inSample?.expectancyR, wfOut = wf.outOfSample?.expectancyR;
+    if (wfIn !== null && wfIn !== undefined && wfOut !== null && wfOut !== undefined) {
+      learnRows.push(
+        `<div><strong style="color:var(--text);">Walk-forward:</strong> in-sample ${fmtR(wfIn)} vs ` +
+        `out-of-sample ${fmtR(wfOut)} (last ${wf.outOfSampleDays}d held out)</div>`
+      );
+    }
+    const excluded = [];
+    if (all.unresolved) excluded.push(`${all.unresolved} unresolved`);
+    if (all.unscoreable) excluded.push(`${all.unscoreable} unscoreable`);
+    if (block.excludedWeekendPredictions) excluded.push(`${block.excludedWeekendPredictions} weekend-dated`);
+    if (excluded.length) learnRows.push(
+      `<div><strong style="color:var(--text);">Excluded from the percentage:</strong> ${excluded.join(' · ')} ` +
+      `— never counted as wins.</div>`
+    );
+  } else {
+    learnRows.push('<div><strong style="color:var(--text);">Accuracy:</strong> run a scan to begin measuring.</div>');
+  }
+
+  (SPEC_DAYTRADE?.learningNotes || []).forEach(note => learnRows.push(`<div>• ${esc(note)}</div>`));
+  ((block && block.notes) || []).forEach(note => learnRows.push(`<div>• ${esc(note)}</div>`));
+  learning.innerHTML = learnRows.join('');
+
+  const all = (block && block.allTime) || {};
   historyLine.textContent = days.length
-    ? `${days.length} day(s) retained · ${completed.length} reviewed · ${exits} exits hit · ${invalid} invalidated`
+    ? `${days.length} day(s) retained · ${all.resolved || 0} scored point-in-time · ` +
+      `${all.wins || 0} exit-first · ${all.losses || 0} stop-first · ${all.unscoreable || 0} unscoreable`
     : 'History starts after the first scan.';
 }
 
