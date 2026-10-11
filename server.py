@@ -10,14 +10,20 @@ NandaEdge Data Server — v3.6
   Fear/Greed  → /feargreed                              CNN proxy
   Cloud-ready: reads PORT/HOST from env; binds 0.0.0.0 when PORT is set.
 """
-import os, sys, signal, time, json, math, socket, warnings, urllib.request, urllib.error, threading, hashlib, random, subprocess, gc, base64
-from datetime import date, timedelta, timezone
+import os, sys, signal, time, json, math, socket, warnings, urllib.request, urllib.error, threading, random, subprocess, gc, base64
+import logging, hmac
+from datetime import date, datetime, timedelta, timezone
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, urlencode
 from zoneinfo import ZoneInfo
 
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
-DAYTRADE_HISTORY_FILE = os.path.join(BASE_DIR, "daytrade_history.json")
+# Overridable so the scan can be exercised without mutating real history, and
+# so cloud deploys can point it at a persistent volume instead of ephemeral disk.
+DAYTRADE_HISTORY_FILE = os.environ.get(
+    "DAYTRADE_HISTORY_FILE",
+    os.path.join(BASE_DIR, "daytrade_history.json"),
+)
 WHATSAPP_STOCK_FEED_FILE = os.environ.get(
     "WHATSAPP_STOCK_FEED_FILE",
     os.path.expanduser("~/myprojects/edge-advisor-local/whatsapp-feeds/BuyAlertsContrbutingAndPaidMembers/whatsapp_stock_feed.json"),
@@ -77,7 +83,8 @@ def _auth_state(handler):
     h = handler.headers.get("Authorization", "")
     if h.lower().startswith("bearer "):
         token = h[7:].strip().lower()
-        if token == AUTH_HASH:
+        # Constant-time: a plain == leaks match length/prefix through timing.
+        if hmac.compare_digest(token, AUTH_HASH):
             return True, "ok"
     _record_fail(ip)
     return False, "unauthorized"
@@ -87,6 +94,85 @@ warnings.filterwarnings("ignore")
 PORT      = int(os.environ.get("PORT", 8765))
 HOST      = os.environ.get("HOST", "0.0.0.0" if os.environ.get("PORT") else "localhost")
 HTML_FILE = os.path.join(BASE_DIR, "index.html")
+
+# yfinance is chatty on provider/network failure. Keep only a short, latest
+# error string for response payloads; avoid spamming stdout/stderr during normal
+# dashboard refreshes.
+_LAST_YFINANCE_ERROR = None
+_LAST_YFINANCE_ERROR_BY_SYMBOL = {}
+_YFINANCE_ERROR_LOCK = threading.Lock()
+# Cap the per-symbol map: scans walk large universes and this would otherwise
+# grow for the life of the process.
+_YFINANCE_ERROR_MAX_SYMBOLS = 512
+
+def _set_last_yfinance_error(msg, sym=None):
+    global _LAST_YFINANCE_ERROR
+    if not msg:
+        return
+    s = str(msg).strip()
+    if not s:
+        return
+    with _YFINANCE_ERROR_LOCK:
+        _LAST_YFINANCE_ERROR = s[:240]
+        if sym:
+            if len(_LAST_YFINANCE_ERROR_BY_SYMBOL) >= _YFINANCE_ERROR_MAX_SYMBOLS:
+                _LAST_YFINANCE_ERROR_BY_SYMBOL.clear()
+            _LAST_YFINANCE_ERROR_BY_SYMBOL[str(sym).upper()] = _LAST_YFINANCE_ERROR
+
+def _provider_hint(msg):
+    """Return a short, actionable hint for common provider failures."""
+    if not msg:
+        return None
+    s = str(msg).strip()
+    if not s:
+        return None
+    lower = s.lower()
+    if "could not resolve host: guce.yahoo.com" in lower or "enotfound guce.yahoo.com" in lower:
+        return "DNS cannot resolve guce.yahoo.com (Yahoo consent host). If you run ad-block DNS (Pi-hole/NextDNS), whitelist guce.yahoo.com or use a non-filtering DNS for validation runs."
+    if "too many requests" in lower or "rate limit" in lower or "429" in lower:
+        return "Yahoo rate-limited the request. Reduce refresh frequency, lower symbol count, or retry later."
+    if "impersonateerror" in lower or "not supported" in lower and "chrome" in lower:
+        return "curl_cffi impersonation mismatch. Upgrade curl_cffi/yfinance or set a supported impersonation profile."
+    return None
+
+# Provider noise is captured off yfinance's own loggers rather than by
+# redirecting sys.stdout/sys.stderr. This server runs a thread per request:
+# redirect_stdout swaps a PROCESS-GLOBAL stream, so one request would swallow
+# another's log lines and could surface them as its own `providerError`.
+# A logging handler plus thread-local buffer keeps capture per-request.
+_YF_CAPTURE = threading.local()
+
+
+class _ProviderLogCapture(logging.Handler):
+    def emit(self, record):
+        buf = getattr(_YF_CAPTURE, "buf", None)
+        if buf is None:
+            return
+        try:
+            buf.append(self.format(record))
+        except Exception:
+            pass
+
+
+_provider_log_handler = _ProviderLogCapture()
+_provider_log_handler.setFormatter(logging.Formatter("%(message)s"))
+for _noisy in ("yfinance", "urllib3", "peewee", "curl_cffi"):
+    _lg = logging.getLogger(_noisy)
+    _lg.addHandler(_provider_log_handler)
+    _lg.setLevel(logging.WARNING)
+    _lg.propagate = False          # keep it off the console
+
+
+def _quiet_call(fn):
+    """Run `fn`, returning (result, provider_log) for this thread only."""
+    buf = []
+    prev = getattr(_YF_CAPTURE, "buf", None)
+    _YF_CAPTURE.buf = buf
+    try:
+        result = fn()
+    finally:
+        _YF_CAPTURE.buf = prev
+    return result, "\n".join(buf).strip()
 
 # ── Market-data credentials (optional; do not commit .env) ──
 # Schwab is prepared for OPTIONS CHAINS ONLY. Keep account scopes, order routes,
@@ -121,7 +207,31 @@ CAP_CATEGORY_UNIVERSES = {
 # later, but normal dashboard refreshes should not batch-load every hot ticker.
 SPECULATIVE_SCAN_LIMIT = int(os.environ.get("SPECULATIVE_SCAN_LIMIT", "5") or "5")
 CAP_CATEGORY_SCAN_LIMIT = int(os.environ.get("CAP_CATEGORY_SCAN_LIMIT", "5") or "5")
+# Raw prediction history stays at 7 days per product rules. Week-over-week
+# accuracy does not need it: tallies are absorbed into a durable rollup before
+# each prune (see _accuracy_absorb). 7 days also matches Yahoo's 1-minute
+# history limit, which is the window point-in-time scoring can reach.
 DAYTRADE_HISTORY_DAYS = int(os.environ.get("DAYTRADE_HISTORY_DAYS", "7") or "7")
+
+# ── Scoring configuration ──────────────────────────────
+# Forward window a prediction gets to resolve. 0 = until the session close.
+FORWARD_WINDOW_MINUTES = int(os.environ.get("FORWARD_WINDOW_MINUTES", "0") or "0")
+# Round-trip cost (spread + slippage) charged against every scored trade, in
+# basis points of entry. Ignoring it flatters tight-stop setups badly.
+COST_BPS = float(os.environ.get("COST_BPS", "10") or "10")
+# A stop closer than this multiple of ATR is noise-range: it will be hit by
+# normal oscillation regardless of direction.
+MIN_STOP_ATR_MULT = float(os.environ.get("MIN_STOP_ATR_MULT", "0.5") or "0.5")
+# A signal with fewer than this many minutes to the close cannot realistically
+# resolve a multi-percent target.
+MIN_MINUTES_TO_CLOSE = int(os.environ.get("MIN_MINUTES_TO_CLOSE", "30") or "30")
+# Most recent N days are held out as out-of-sample for walk-forward reporting.
+OUT_OF_SAMPLE_DAYS = int(os.environ.get("OUT_OF_SAMPLE_DAYS", "3") or "3")
+
+RESOLUTION_EXIT = "exit_first"
+RESOLUTION_STOP = "stop_first"
+RESOLUTION_NONE = "no_resolution"
+RESOLUTION_UNSCOREABLE = "unscoreable"
 CANDLE_RESPONSE_LIMIT = int(os.environ.get("CANDLE_RESPONSE_LIMIT", "120") or "120")
 DAYTRADE_CHART_LIMIT = int(os.environ.get("DAYTRADE_CHART_LIMIT", "32") or "32")
 MARKETS = [
@@ -188,6 +298,9 @@ def _options_provider_delay():
 
 def _cache_options(cache_key, data):
     _opts_cache[cache_key] = {"t": time.time(), "data": data}
+    # Key includes caller-supplied DTE/delta/top_n, so this is the one cache an
+    # unauthenticated client can inflate at will. Keep it bounded.
+    _trim_cache(_opts_cache, 128)
     return data
 
 
@@ -329,6 +442,66 @@ def _pacific_time_label(ts):
         return None
 
 
+def _pacific_date_key(ts):
+    try:
+        if hasattr(ts, "to_pydatetime"):
+            dt = ts.to_pydatetime()
+        else:
+            dt = ts
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(PACIFIC_TZ).strftime("%Y-%m-%d")
+    except Exception:
+        return None
+
+
+def _to_utc_datetime(ts):
+    """Normalize a pandas/py timestamp to an aware UTC datetime."""
+    try:
+        dt = ts.to_pydatetime() if hasattr(ts, "to_pydatetime") else ts
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def _utc_iso(ts):
+    """Machine-parseable signal time. `signalTimePST` is a display label only;
+    point-in-time validation needs a real timestamp to filter bars against."""
+    dt = _to_utc_datetime(ts)
+    return dt.strftime("%Y-%m-%dT%H:%M:%SZ") if dt else None
+
+
+def _session_bucket(ts):
+    """Coarse time-of-day bucket in Pacific market hours (06:30–13:00 PT)."""
+    dt = _to_utc_datetime(ts)
+    if not dt:
+        return None
+    pt = dt.astimezone(PACIFIC_TZ)
+    minutes = pt.hour * 60 + pt.minute
+    if minutes < 6 * 60 + 30:
+        return "pre_market"
+    if minutes < 7 * 60 + 30:
+        return "open_hour"
+    if minutes < 10 * 60:
+        return "morning"
+    if minutes < 12 * 60:
+        return "midday"
+    if minutes < 13 * 60:
+        return "power_hour"
+    return "after_hours"
+
+
+def _minutes_to_close(ts):
+    """Minutes from the signal bar to the 13:00 PT close; negative after it."""
+    dt = _to_utc_datetime(ts)
+    if not dt:
+        return None
+    pt = dt.astimezone(PACIFIC_TZ)
+    return (13 * 60) - (pt.hour * 60 + pt.minute)
+
+
 def _touch_times(d, bias, entry, exit_value, stop):
     entry_ts = exit_ts = invalid_ts = None
     entry_seen = False
@@ -358,6 +531,10 @@ def _touch_times(d, bias, entry, exit_value, stop):
     last_ts = d.index[-1] if len(d.index) else None
     return {
         "signalTimePST": _pacific_time_label(last_ts),
+        "signalDayPT": _pacific_date_key(last_ts),
+        "signalTsUTC": _utc_iso(last_ts),
+        "sessionBucket": _session_bucket(last_ts),
+        "minutesToClose": _minutes_to_close(last_ts),
         "entryTimePST": _pacific_time_label(entry_ts),
         "exitTimePST": _pacific_time_label(exit_ts),
         "invalidTimePST": _pacific_time_label(invalid_ts),
@@ -381,11 +558,21 @@ def _fetch_intraday_frames(syms, interval="5m", period="1d"):
     if not symbols:
         return {}
     try:
-        df = yf.download(" ".join(symbols), period=period, interval=interval,
-                         group_by="ticker", threads=False, progress=False,
-                         auto_adjust=False, prepost=False)
+        df, provider_log = _quiet_call(lambda: yf.download(
+            " ".join(symbols),
+            period=period,
+            interval=interval,
+            group_by="ticker",
+            threads=False,
+            progress=False,
+            auto_adjust=False,
+            prepost=False,
+        ))
+        if provider_log:
+            _set_last_yfinance_error(provider_log.splitlines()[0])
     except Exception as e:
         print(f"  WARN candles batch fallback: {e}", flush=True)
+        _set_last_yfinance_error(e)
         df = None
     frames = {}
     if df is not None:
@@ -403,13 +590,24 @@ def _fetch_intraday_frames(syms, interval="5m", period="1d"):
     missing = [sym for sym in symbols if sym not in frames]
     for sym in missing:
         try:
-            d = yf.download(sym, period=period, interval=interval,
-                            group_by="ticker", threads=False, progress=False,
-                            auto_adjust=False, prepost=False).dropna()
-            if not d.empty:
+            d, provider_log = _quiet_call(lambda: yf.download(
+                sym,
+                period=period,
+                interval=interval,
+                group_by="ticker",
+                threads=False,
+                progress=False,
+                auto_adjust=False,
+                prepost=False,
+            ))
+            if provider_log:
+                _set_last_yfinance_error(provider_log.splitlines()[0], sym=sym)
+            d = d.dropna() if d is not None else None
+            if d is not None and not d.empty:
                 frames[sym] = d
         except Exception as e:
             print(f"  WARN candles single {sym}: {e}", flush=True)
+            _set_last_yfinance_error(e, sym=sym)
     return frames
 
 
@@ -425,7 +623,21 @@ def fetch_candles(syms=None, interval="5m", period="1d"):
 
     frames = _fetch_intraday_frames(syms, interval, period)
     out = {}
-    for sym, d in frames.items():
+    for sym in syms:
+        d = frames.get(sym)
+        if d is None or getattr(d, "empty", True):
+            per_sym_error = _LAST_YFINANCE_ERROR_BY_SYMBOL.get(str(sym).upper()) or _LAST_YFINANCE_ERROR
+            per_sym_hint = _provider_hint(per_sym_error)
+            out[sym] = {
+                "symbol": sym,
+                "interval": interval,
+                "period": period,
+                "candles": [],
+                "error": "no intraday candle data",
+                "providerError": per_sym_error,
+                **({"providerHint": per_sym_hint} if per_sym_hint else {}),
+            }
+            continue
         candles = []
         for ts, row in d.tail(CANDLE_RESPONSE_LIMIT).iterrows():
             candles.append({
@@ -565,9 +777,16 @@ def fetch_daytrade(syms=None, interval="5m", period="1d"):
     results = []
     for sym in syms:
         try:
-            item = _daytrade_for_frame(sym, frames.get(sym), interval) if sym in frames else None
-            if item:
-                results.append(item)
+            if sym not in frames or frames.get(sym) is None or getattr(frames.get(sym), "empty", True):
+                per_sym_error = _LAST_YFINANCE_ERROR_BY_SYMBOL.get(str(sym).upper()) or _LAST_YFINANCE_ERROR
+                per_sym_hint = _provider_hint(per_sym_error)
+                row = {"symbol": sym, "error": "no intraday candle data", "providerError": per_sym_error}
+                if per_sym_hint:
+                    row["providerHint"] = per_sym_hint
+                results.append(row)
+                continue
+            item = _daytrade_for_frame(sym, frames.get(sym), interval)
+            results.append(item or {"symbol": sym, "error": "insufficient candle history"})
         except Exception as e:
             print(f"  WARN daytrade {sym}: {e}", flush=True)
             results.append({"symbol": sym, "error": str(e)})
@@ -584,6 +803,12 @@ def fetch_daytrade(syms=None, interval="5m", period="1d"):
     return data
 
 
+# Prediction history is a single JSON file mutated read-modify-write by request
+# threads. Serialize those writes and make them atomic: a crash or two
+# concurrent scans previously truncated the file or dropped a whole day.
+_HISTORY_LOCK = threading.RLock()
+
+
 def _history_load():
     try:
         with open(DAYTRADE_HISTORY_FILE, "r", encoding="utf-8") as f:
@@ -593,24 +818,59 @@ def _history_load():
         return {"days": {}}
 
 
+def _history_prune(data):
+    """Drop days past the retention window and re-compact stored predictions."""
+    # Absorb accuracy FIRST: once a day is pruned its outcomes are unrecoverable,
+    # and the week-over-week comparison depends on them.
+    _accuracy_absorb(data)
+    days = data.setdefault("days", {})
+    cutoff = date.today() - timedelta(days=DAYTRADE_HISTORY_DAYS)
+    for k in list(days.keys()):
+        try:
+            if date.fromisoformat(k) < cutoff:
+                del days[k]
+        except Exception:
+            del days[k]
+    for day_payload in days.values():
+        day_payload["predictions"] = [
+            _compact_setup(p) for p in day_payload.get("predictions", [])
+        ]
+    return data
+
+
+def _history_write_atomic(data):
+    """Write to a temp file in the same directory, then os.replace() it in."""
+    tmp = f"{DAYTRADE_HISTORY_FILE}.tmp.{os.getpid()}.{threading.get_ident()}"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, DAYTRADE_HISTORY_FILE)
+
+
 def _history_save(data):
     try:
-        days = data.setdefault("days", {})
-        cutoff = date.today() - timedelta(days=DAYTRADE_HISTORY_DAYS)
-        for k in list(days.keys()):
-            try:
-                if date.fromisoformat(k) < cutoff:
-                    del days[k]
-            except Exception:
-                del days[k]
-        for day_payload in days.values():
-            day_payload["predictions"] = [
-                _compact_setup(p) for p in day_payload.get("predictions", [])
-            ]
-        with open(DAYTRADE_HISTORY_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
+        with _HISTORY_LOCK:
+            _history_write_atomic(_history_prune(data))
     except Exception as e:
         print(f"  WARN daytrade history save: {e}", flush=True)
+
+
+def _history_merge_day(day_key, payload):
+    """Re-read from disk under the lock, set one day, write atomically.
+
+    A scan holds its in-memory `history` across network calls, so writing that
+    whole snapshot back would discard any day another request stored meanwhile.
+    """
+    try:
+        with _HISTORY_LOCK:
+            fresh = _history_load()
+            fresh.setdefault("days", {})[day_key] = payload
+            _history_write_atomic(_history_prune(fresh))
+            return fresh
+    except Exception as e:
+        print(f"  WARN daytrade history merge: {e}", flush=True)
+        return None
 
 
 def _compact_setup(setup, keep_candles=False):
@@ -621,10 +881,17 @@ def _compact_setup(setup, keep_candles=False):
         "dayHigh", "dayLow", "volumeRatio", "aiConfidence", "tradeRating",
         "exitRule", "why", "speculativeScore", "alertStatus", "alertReason",
         "modelRule", "signalTimePST", "entryTimePST", "exitTimePST",
-        "invalidTimePST", "outcome", "outcomeReason", "realized",
+        "invalidTimePST", "signalDayPT", "outcome", "outcomeReason", "realized",
         "whatWentWrong",
+        # scoring fields (point-in-time validation, R-multiples, regime tags)
+        "signalTsUTC", "sessionBucket", "minutesToClose", "vixRegime",
+        "plannedR", "targetDistPct", "stopDistPct", "stopAtrMult", "stopTooTight",
+        "resolution", "resolvedAtUTC", "realizedR", "mfeR", "maeR", "costBps",
+        "lateSignal",
     ]
     compact = {k: setup[k] for k in fields if k in setup}
+    if compact.get("outcome") in (None, ""):
+        compact["outcome"] = "pending"
     if keep_candles and "candles" in setup:
         compact["candles"] = setup["candles"]
     return compact
@@ -637,7 +904,10 @@ def _compact_live_setup(setup):
         "stopLoss", "vwap", "atr", "dayHigh", "dayLow", "volumeRatio",
         "aiConfidence", "tradeRating", "exitRule", "why", "speculativeScore",
         "variancePct", "alertStatus", "alertReason", "modelRule", "capCategory",
-        "signalTimePST", "entryTimePST", "exitTimePST", "invalidTimePST",
+        "signalTimePST", "signalDayPT", "entryTimePST", "exitTimePST", "invalidTimePST",
+        "signalTsUTC", "sessionBucket", "minutesToClose", "vixRegime",
+        "plannedR", "targetDistPct", "stopDistPct", "stopAtrMult", "stopTooTight",
+        "lateSignal",
     ]
     return {k: setup[k] for k in fields if k in setup}
 
@@ -650,6 +920,10 @@ def _compact_history(history):
             "method": payload.get("method"),
             "predictions": [_compact_setup(p) for p in payload.get("predictions", [])],
         }
+    # Per-day tallies outlive the raw predictions, so surface them too.
+    acc_days = (history.get("accuracy") or {}).get("days") or {}
+    if acc_days:
+        compact["accuracyDays"] = dict(sorted(acc_days.items()))
     return compact
 
 
@@ -721,23 +995,67 @@ def _realized_for_symbol(frames, sym, day_key):
         return None
 
 
+_RESOLUTION_TO_OUTCOME = {
+    RESOLUTION_EXIT: "exit_hit",
+    RESOLUTION_STOP: "invalid",
+    RESOLUTION_NONE: "no_resolution",
+}
+
+
 def _update_prediction_history(history, today_key, frames_5d):
+    """Score stored predictions point-in-time.
+
+    Scoring is attempted against bars strictly after each signal. When the
+    provider gives only daily bars (no intraday timestamps to compare against),
+    the prediction is left unscored rather than graded on a day range that
+    includes price action from before the signal fired.
+    """
     days = history.setdefault("days", {})
     for day_key, day_payload in list(days.items()):
         if day_key >= today_key:
             continue
+        if not _is_trading_day(day_key):
+            continue          # no session, so nothing to validate against
         for setup in day_payload.get("predictions", []):
-            if setup.get("outcome") in ("exit_hit", "invalid", "triggered"):
+            if setup.get("resolution") in (RESOLUTION_EXIT, RESOLUTION_STOP, RESOLUTION_NONE):
                 continue
-            realized = _realized_for_symbol(frames_5d, setup.get("symbol", ""), day_key)
-            if not realized:
+            setup.update(_planned_geometry(setup))
+            sym = setup.get("symbol", "")
+            frame = frames_5d.get(sym) if frames_5d else None
+            realized = _realized_for_symbol(frames_5d, sym, day_key)
+            if realized:
+                setup["realized"] = realized
+
+            bars = _bars_after(frame, setup.get("signalTsUTC"))
+            if bars is None:
+                # No post-signal bars available (daily-only data, or a legacy
+                # row written before signalTsUTC existed).
+                setup["outcome"] = setup.get("outcome") or "pending"
+                setup["resolution"] = RESOLUTION_UNSCOREABLE
+                setup["outcomeReason"] = (
+                    "Not scoreable point-in-time: no intraday bars after the signal "
+                    "timestamp (needs 1m data within Yahoo's ~7-day window)."
+                )
                 continue
-            status, reason = _setup_status(setup, high=realized["high"], low=realized["low"])
-            setup["outcome"] = status
-            setup["outcomeReason"] = reason
-            setup["realized"] = realized
-            setup["whatWentWrong"] = _what_went_wrong(setup, status, realized)
+
+            res = _resolve_path(setup, bars)
+            setup.update(res)
+            setup["outcome"] = _RESOLUTION_TO_OUTCOME.get(res.get("resolution"), "pending")
+            setup["outcomeReason"] = _resolution_reason(res)
+            setup["whatWentWrong"] = _what_went_wrong(setup, setup["outcome"], realized)
     return history
+
+
+def _resolution_reason(res):
+    r = res.get("resolution")
+    rr = res.get("realizedR")
+    if r == RESOLUTION_EXIT:
+        return f"Exit touched first after the signal (net {rr}R after costs)."
+    if r == RESOLUTION_STOP:
+        return f"Stop touched first after the signal (net {rr}R after costs)."
+    if r == RESOLUTION_NONE:
+        return f"Forward window closed with neither level touched (marked to close, {rr}R)."
+    return "Not scoreable."
 
 
 def _what_went_wrong(setup, status, realized):
@@ -770,6 +1088,619 @@ def _learning_notes(history):
     return notes[:4]
 
 
+# ── Prediction accuracy ────────────────────────────────
+# Raw predictions are pruned after DAYTRADE_HISTORY_DAYS (7), so a week-over-week
+# comparison cannot be computed from them alone — last week's rows are already
+# gone. Accuracy is therefore absorbed into a durable per-day rollup BEFORE each
+# prune. Days still in raw history are recomputed every pass (outcomes get filled
+# in later by validation); pruned days keep their last computed values.
+ACCURACY_RETENTION_DAYS = int(os.environ.get("ACCURACY_RETENTION_DAYS", "400") or "400")
+# Below this many resolved predictions a percentage is noise, so none is shown.
+MIN_ACCURACY_SAMPLE = int(os.environ.get("MIN_ACCURACY_SAMPLE", "5") or "5")
+# Cap symbols per validation pass to bound the provider call.
+ACCURACY_SYMBOL_LIMIT = int(os.environ.get("ACCURACY_SYMBOL_LIMIT", "40") or "40")
+
+WIN_OUTCOMES = ("exit_hit",)
+LOSS_OUTCOMES = ("invalid",)
+
+
+_vix_regime_cache = {"t": 0, "value": None}
+VIX_REGIME_TTL = 600
+
+
+def _vix_regime():
+    """Coarse volatility regime at signal time, for slicing outcomes later.
+
+    Cached and failure-tolerant: regime tagging must never break a scan.
+    """
+    now = time.time()
+    if _vix_regime_cache["value"] and now - _vix_regime_cache["t"] < VIX_REGIME_TTL:
+        return _vix_regime_cache["value"]
+    try:
+        frames = _fetch_intraday_frames(["^VIX"], "1d", "5d")
+        d = frames.get("^VIX") if frames else None
+        if d is None or getattr(d, "empty", True):
+            return None
+        vix = _safe_float(d["Close"].dropna().iloc[-1])
+        if not vix or vix <= 0:
+            return None
+        if vix < 15:
+            label = "calm"
+        elif vix < 20:
+            label = "normal"
+        elif vix < 30:
+            label = "elevated"
+        else:
+            label = "stressed"
+        _vix_regime_cache.update({"t": now, "value": label})
+        return label
+    except Exception:
+        return None
+
+
+def _planned_geometry(setup):
+    """Target/stop distances and planned R, measured from the entry reference."""
+    bias = setup.get("bias")
+    base = _safe_float(setup.get("entryValue")) or _safe_float(setup.get("last"))
+    exit_value = _safe_float(setup.get("exitValue"))
+    stop = _safe_float(setup.get("stopLoss"))
+    atr = _safe_float(setup.get("atr"))
+    out = {}
+    if not base or exit_value is None or stop is None:
+        return out
+    reward = abs(exit_value - base)
+    risk = abs(base - stop)
+    out["targetDistPct"] = round(reward / base * 100, 3)
+    out["stopDistPct"] = round(risk / base * 100, 3)
+    out["plannedR"] = round(reward / risk, 2) if risk else None
+    if atr and atr > 0:
+        out["stopAtrMult"] = round(risk / atr, 2)
+        out["stopTooTight"] = bool(risk / atr < MIN_STOP_ATR_MULT)
+    mins = setup.get("minutesToClose")
+    if isinstance(mins, (int, float)):
+        out["lateSignal"] = bool(mins < MIN_MINUTES_TO_CLOSE)
+    _ = bias
+    return out
+
+
+def _bars_after(d, signal_ts_utc, window_minutes=None):
+    """Bars strictly AFTER the signal, bounded by the forward window.
+
+    This is the correction that matters most: scoring a signal against the whole
+    session's high/low counts price action that happened before the signal
+    existed, which manufactures stop-outs that never occurred.
+    """
+    if d is None or getattr(d, "empty", True) or not signal_ts_utc:
+        return None
+    try:
+        start = datetime.strptime(signal_ts_utc, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except Exception:
+        return None
+    try:
+        idx = d.index
+        if getattr(idx, "tz", None) is None:
+            idx_utc = idx.tz_localize("UTC")
+        else:
+            idx_utc = idx.tz_convert("UTC")
+        mask = idx_utc > start
+        window = window_minutes if window_minutes is not None else FORWARD_WINDOW_MINUTES
+        if window and window > 0:
+            mask = mask & (idx_utc <= start + timedelta(minutes=window))
+        rows = d[mask]
+        return rows if not rows.empty else None
+    except Exception:
+        return None
+
+
+def _resolve_path(setup, bars):
+    """Walk bars in time order; report which level is touched FIRST.
+
+    `_setup_status` tests the exit before the stop, so when a single bar's range
+    spans both it always scores a win. Here the first bar to touch either level
+    decides, and a bar touching both is resolved conservatively as a stop.
+    """
+    bias = setup.get("bias")
+    base = _safe_float(setup.get("entryValue")) or _safe_float(setup.get("last"))
+    exit_value = _safe_float(setup.get("exitValue"))
+    stop = _safe_float(setup.get("stopLoss"))
+    if not base or exit_value is None or stop is None or bars is None:
+        return {"resolution": RESOLUTION_UNSCOREABLE}
+
+    risk = abs(base - stop)
+    if not risk:
+        return {"resolution": RESOLUTION_UNSCOREABLE}
+    short = bias == "SHORT"
+    mfe = mae = 0.0
+
+    for ts, row in bars.iterrows():
+        hi = _safe_float(row.get("High"))
+        lo = _safe_float(row.get("Low"))
+        if hi is None or lo is None:
+            continue
+        fav = (base - lo) if short else (hi - base)
+        adv = (hi - base) if short else (base - lo)
+        mfe = max(mfe, fav)
+        mae = max(mae, adv)
+
+        hit_exit = (lo <= exit_value) if short else (hi >= exit_value)
+        hit_stop = (hi >= stop) if short else (lo <= stop)
+        if hit_exit and hit_stop:
+            # Both inside one bar: intra-bar order is unknown, so assume the
+            # worse outcome rather than crediting a win we cannot prove.
+            return _resolution_payload(RESOLUTION_STOP, ts, base, risk, mfe, mae, stop_r=-1.0)
+        if hit_exit:
+            reward = abs(exit_value - base)
+            return _resolution_payload(RESOLUTION_EXIT, ts, base, risk, mfe, mae,
+                                       stop_r=reward / risk)
+        if hit_stop:
+            return _resolution_payload(RESOLUTION_STOP, ts, base, risk, mfe, mae, stop_r=-1.0)
+
+    # Window expired with neither level touched: mark to close, not as a loss.
+    last_ts = bars.index[-1]
+    last_close = _safe_float(bars["Close"].iloc[-1])
+    gross_r = 0.0
+    if last_close is not None:
+        move = (base - last_close) if short else (last_close - base)
+        gross_r = move / risk
+    return _resolution_payload(RESOLUTION_NONE, last_ts, base, risk, mfe, mae, stop_r=gross_r)
+
+
+def _resolution_payload(resolution, ts, base, risk, mfe, mae, stop_r):
+    """Attach the cost charge and convert favourable/adverse excursions to R."""
+    cost_r = (base * COST_BPS / 10000.0) / risk if risk else 0.0
+    return {
+        "resolution": resolution,
+        "resolvedAtUTC": _utc_iso(ts),
+        "realizedR": round(stop_r - cost_r, 3),
+        "mfeR": round(mfe / risk, 3) if risk else None,
+        "maeR": round(mae / risk, 3) if risk else None,
+        "costBps": COST_BPS,
+    }
+
+
+def _iso_week_key(day_key):
+    """'2026-10-09' -> '2026-W41' (ISO week, so weeks never split a year oddly)."""
+    try:
+        y, w, _ = date.fromisoformat(day_key).isocalendar()
+        return f"{y}-W{w:02d}"
+    except Exception:
+        return None
+
+
+def _is_trading_day(day_key):
+    """Mon–Fri only. Saturday/Sunday predictions can never be scored: the market
+    is closed, so no bar exists for that date and the outcome stays unresolved
+    forever. They are excluded from accuracy rather than counted as misses."""
+    try:
+        return date.fromisoformat(day_key).weekday() < 5
+    except Exception:
+        return False
+
+
+def _previous_trading_day(d):
+    """Walk back to the nearest Mon–Fri (today included if it is a weekday)."""
+    while d.weekday() >= 5:
+        d -= timedelta(days=1)
+    return d
+
+
+def _bucket_keys(p):
+    """Dimensions a prediction is sliced by for calibration/regime analysis."""
+    conf = p.get("aiConfidence")
+    if isinstance(conf, (int, float)):
+        # 0-1 or 0-100 both appear in the wild; normalize to deciles of percent.
+        pct = conf * 100 if conf <= 1 else conf
+        conf_key = f"{int(max(0, min(99, pct)) // 10) * 10}-{int(max(0, min(99, pct)) // 10) * 10 + 9}%"
+    else:
+        conf_key = str(conf) if conf else "unknown"
+    return {
+        "confidence": conf_key,
+        "rating": str(p.get("tradeRating") or "unknown"),
+        "session": str(p.get("sessionBucket") or "unknown"),
+        "vix": str(p.get("vixRegime") or "unknown"),
+        "symbol": str(p.get("symbol") or "unknown"),
+        "bias": str(p.get("bias") or "unknown"),
+    }
+
+
+def _blank_stats():
+    return {"wins": 0, "losses": 0, "unresolved": 0, "sumR": 0.0,
+            "sumWinR": 0.0, "sumLossR": 0.0}
+
+
+def _add_outcome(stats, outcome, realized_r):
+    if outcome in WIN_OUTCOMES:
+        stats["wins"] += 1
+        if realized_r is not None:
+            stats["sumWinR"] += realized_r
+    elif outcome in LOSS_OUTCOMES:
+        stats["losses"] += 1
+        if realized_r is not None:
+            stats["sumLossR"] += realized_r
+    else:
+        stats["unresolved"] += 1
+        return                    # unresolved contributes no R
+    if realized_r is not None:
+        stats["sumR"] += realized_r
+
+
+def _tally_predictions(predictions):
+    """Count wins/losses/unresolved plus R sums and per-dimension buckets.
+
+    R sums are stored (not just counts) so expectancy survives raw-history
+    pruning exactly as the win/loss tallies do.
+    """
+    agg = _blank_stats()
+    agg["unscoreable"] = 0
+    buckets = {}
+    for p in predictions or []:
+        outcome = p.get("outcome")
+        realized_r = _safe_float(p.get("realizedR"))
+        if p.get("resolution") == RESOLUTION_UNSCOREABLE:
+            agg["unscoreable"] += 1
+        _add_outcome(agg, outcome, realized_r)
+        if outcome in WIN_OUTCOMES or outcome in LOSS_OUTCOMES:
+            for dim, key in _bucket_keys(p).items():
+                slot = buckets.setdefault(dim, {}).setdefault(key, _blank_stats())
+                _add_outcome(slot, outcome, realized_r)
+    agg["resolved"] = agg["wins"] + agg["losses"]
+    agg["total"] = agg["resolved"] + agg["unresolved"]
+    agg["buckets"] = buckets
+    return agg
+
+
+def _accuracy_pct(wins, resolved):
+    """Percentage over RESOLVED predictions only; None when the sample is thin."""
+    if not resolved or resolved < MIN_ACCURACY_SAMPLE:
+        return None
+    return round(100.0 * wins / resolved, 1)
+
+
+def _expectancy_block(stats):
+    """Expectancy in R — the metric that decides whether an edge exists.
+
+    Win rate alone is gameable: shrink the target toward the stop and it rises
+    while profitability falls. Expectancy per trade (average R, net of costs)
+    cannot be gamed that way, so it is reported alongside the hit rate.
+    """
+    wins, losses = stats.get("wins", 0), stats.get("losses", 0)
+    resolved = wins + losses
+    out = {
+        "wins": wins,
+        "losses": losses,
+        "unresolved": stats.get("unresolved", 0),
+        "resolved": resolved,
+        "total": resolved + stats.get("unresolved", 0),
+        "accuracyPct": _accuracy_pct(wins, resolved),
+        "avgWinR": round(stats["sumWinR"] / wins, 3) if wins else None,
+        "avgLossR": round(stats["sumLossR"] / losses, 3) if losses else None,
+    }
+    if resolved >= MIN_ACCURACY_SAMPLE:
+        out["expectancyR"] = round(stats.get("sumR", 0.0) / resolved, 3)
+        out["totalR"] = round(stats.get("sumR", 0.0), 2)
+        gross_win = stats["sumWinR"]
+        gross_loss = abs(stats["sumLossR"])
+        out["profitFactor"] = round(gross_win / gross_loss, 2) if gross_loss else None
+        # Win rate this geometry must beat just to break even.
+        if out["avgWinR"] and out["avgLossR"]:
+            rr = abs(out["avgWinR"] / out["avgLossR"]) if out["avgLossR"] else None
+            out["rewardRisk"] = round(rr, 2) if rr else None
+            out["breakevenWinPct"] = round(100.0 / (1 + rr), 1) if rr else None
+        out["verdict"] = (
+            "positive expectancy" if out["expectancyR"] > 0 else
+            "negative expectancy" if out["expectancyR"] < 0 else "flat"
+        )
+    else:
+        out["expectancyR"] = None
+        out["verdict"] = f"insufficient sample (<{MIN_ACCURACY_SAMPLE} resolved)"
+    return out
+
+
+def _merge_stats(target, src):
+    for k in ("wins", "losses", "unresolved", "sumR", "sumWinR", "sumLossR", "unscoreable"):
+        if k in src:
+            target[k] = target.get(k, 0) + (src.get(k) or 0)
+    return target
+
+
+def _merge_buckets(target, src):
+    for dim, keys in (src or {}).items():
+        for key, stats in keys.items():
+            slot = target.setdefault(dim, {}).setdefault(key, _blank_stats())
+            _merge_stats(slot, stats)
+    return target
+
+
+def _accuracy_absorb(data):
+    """Refresh the durable per-day rollup from whatever raw days are present.
+
+    Idempotent: re-running recomputes live days and leaves pruned days frozen.
+    Must be called before pruning or the pruned day's result is lost forever.
+    """
+    acc = data.setdefault("accuracy", {})
+    acc_days = acc.setdefault("days", {})
+    # Persisted as {day: count} so the disclosure survives raw-history pruning
+    # and re-absorbing overwrites a day rather than double-counting it.
+    excluded = acc.setdefault("excludedWeekend", {})
+    for day_key, payload in (data.get("days") or {}).items():
+        tally = _tally_predictions(payload.get("predictions"))
+        if not tally["total"]:
+            continue
+        if not _is_trading_day(day_key):
+            # Weekend-dated rows are unscoreable by definition — keep them out
+            # of the tallies instead of letting them sit as permanent misses.
+            excluded[day_key] = tally["total"]
+            acc_days.pop(day_key, None)
+            continue
+        tally["week"] = _iso_week_key(day_key)
+        tally["updatedAt"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        acc_days[day_key] = tally
+    cutoff = date.today() - timedelta(days=ACCURACY_RETENTION_DAYS)
+    for k in list(acc_days.keys()):
+        try:
+            # Drop expired entries, plus any weekend rows written by older builds.
+            if date.fromisoformat(k) < cutoff or not _is_trading_day(k):
+                del acc_days[k]
+        except Exception:
+            del acc_days[k]
+    for k in list(excluded.keys()):
+        try:
+            if date.fromisoformat(k) < cutoff:
+                del excluded[k]
+        except Exception:
+            del excluded[k]
+    return data
+
+
+def _aggregate_days(acc_days, day_keys, with_buckets=False):
+    stats = _blank_stats()
+    stats["unscoreable"] = 0
+    buckets = {}
+    for k in day_keys:
+        day = acc_days.get(k) or {}
+        _merge_stats(stats, day)
+        if with_buckets:
+            _merge_buckets(buckets, day.get("buckets"))
+    out = _expectancy_block(stats)
+    out["unscoreable"] = stats.get("unscoreable", 0)
+    out["tradingDays"] = len(day_keys)
+    if with_buckets:
+        out["_buckets"] = buckets
+    return out
+
+
+def _week_bucket(acc_days, week_key):
+    keys = [k for k, v in acc_days.items() if v.get("week") == week_key]
+    bucket = _aggregate_days(acc_days, keys)
+    bucket["week"] = week_key
+    bucket["days"] = sorted(keys)
+    return bucket
+
+
+def _rank_buckets(buckets, dim, min_resolved=None):
+    """Expectancy per bucket for one dimension, worst-to-best, sample-gated."""
+    floor = MIN_ACCURACY_SAMPLE if min_resolved is None else min_resolved
+    rows = []
+    for key, stats in (buckets.get(dim) or {}).items():
+        block = _expectancy_block(stats)
+        block["key"] = key
+        rows.append(block)
+    rows.sort(key=lambda r: (r.get("expectancyR") is None, r.get("expectancyR") or 0))
+    return [r for r in rows if r["resolved"] >= floor] or rows
+
+
+def _confidence_level(key):
+    """Numeric lower bound of a '70-79%' style bucket key, for ordering."""
+    try:
+        return int(str(key).split("-", 1)[0].rstrip("%"))
+    except Exception:
+        return None
+
+
+def _calibration_notes(buckets):
+    """Does a HIGHER stated confidence actually produce a better outcome?
+
+    Must be judged by ordering buckets on confidence level, not on expectancy —
+    sorting by expectancy makes any score look predictive by construction.
+    """
+    notes = []
+    scored = [r for r in _rank_buckets(buckets, "confidence")
+              if r.get("expectancyR") is not None and _confidence_level(r["key"]) is not None]
+    if len(scored) < 2:
+        return notes
+    scored.sort(key=lambda r: _confidence_level(r["key"]))
+    low, high = scored[0], scored[-1]          # lowest vs highest CONFIDENCE
+    if high["expectancyR"] > low["expectancyR"]:
+        notes.append(
+            f"aiConfidence is directionally calibrated: {low['key']} = {low['expectancyR']}R "
+            f"vs {high['key']} = {high['expectancyR']}R. The top buckets are where the edge is."
+        )
+    elif high["expectancyR"] < low["expectancyR"]:
+        notes.append(
+            f"aiConfidence is INVERTED: the {high['key']} bucket returns "
+            f"{high['expectancyR']}R while {low['key']} returns {low['expectancyR']}R. "
+            "High-confidence signals are performing worse than low-confidence ones."
+        )
+    else:
+        notes.append(
+            f"aiConfidence is not calibrated: {low['key']} and {high['key']} both return "
+            f"{high['expectancyR']}R. The score carries no information — treat it as decoration."
+        )
+    return notes
+
+
+def _accuracy_summary(history, today=None):
+    """Week-over-week accuracy plus all-time, computed off the durable rollup."""
+    acc_days = (history.get("accuracy") or {}).get("days") or {}
+    today = today or date.today()
+    iso_y, iso_w, _ = today.isocalendar()
+    this_week = f"{iso_y}-W{iso_w:02d}"
+    prev_y, prev_w, _ = (today - timedelta(days=7)).isocalendar()
+    prev_week = f"{prev_y}-W{prev_w:02d}"
+
+    current = _week_bucket(acc_days, this_week)
+    previous = _week_bucket(acc_days, prev_week)
+    all_time = _aggregate_days(acc_days, list(acc_days.keys()), with_buckets=True)
+    all_buckets = all_time.pop("_buckets", {})
+
+    # Walk-forward: hold out the most recent days. If in-sample looks good and
+    # out-of-sample does not, the model is fitted to noise.
+    oos_cutoff = today - timedelta(days=OUT_OF_SAMPLE_DAYS)
+    oos_keys, is_keys = [], []
+    for k in acc_days:
+        try:
+            (oos_keys if date.fromisoformat(k) > oos_cutoff else is_keys).append(k)
+        except Exception:
+            continue
+    walk_forward = {
+        "outOfSampleDays": OUT_OF_SAMPLE_DAYS,
+        "inSample": _aggregate_days(acc_days, is_keys),
+        "outOfSample": _aggregate_days(acc_days, oos_keys),
+    }
+
+    delta = None
+    if current["accuracyPct"] is not None and previous["accuracyPct"] is not None:
+        delta = round(current["accuracyPct"] - previous["accuracyPct"], 1)
+
+    trend = sorted(
+        (_week_bucket(acc_days, w) for w in {v.get("week") for v in acc_days.values() if v.get("week")}),
+        key=lambda b: b["week"],
+    )[-8:]
+
+    notes = []
+    if previous["resolved"] < MIN_ACCURACY_SAMPLE:
+        notes.append(
+            f"Previous week has only {previous['resolved']} resolved prediction(s); "
+            f"{MIN_ACCURACY_SAMPLE} needed before a percentage is shown."
+        )
+    if delta is not None:
+        direction = "improved" if delta > 0 else ("declined" if delta < 0 else "held flat")
+        notes.append(
+            f"Historical hit rate {direction} {abs(delta)} pts vs the prior week "
+            f"({previous['accuracyPct']}% → {current['accuracyPct']}%)."
+        )
+    if all_time["unresolved"]:
+        notes.append(
+            f"{all_time['unresolved']} prediction(s) never reached exit or stop and are "
+            "excluded from the percentage rather than counted as wins."
+        )
+    if all_time.get("unscoreable"):
+        notes.append(
+            f"{all_time['unscoreable']} prediction(s) could not be scored point-in-time "
+            "(no intraday bars after the signal timestamp) and are excluded entirely."
+        )
+    if all_time.get("expectancyR") is not None:
+        notes.append(
+            f"Expectancy {all_time['expectancyR']}R per resolved trade "
+            f"(net of {COST_BPS} bps costs) — {all_time['verdict']}. "
+            f"At {all_time.get('rewardRisk')}:1 reward/risk this geometry only needs "
+            f"{all_time.get('breakevenWinPct')}% wins to break even, so hit rate alone "
+            "is the wrong target."
+        )
+    notes.extend(_calibration_notes(all_buckets))
+    wf_in = walk_forward["inSample"].get("expectancyR")
+    wf_out = walk_forward["outOfSample"].get("expectancyR")
+    if wf_in is not None and wf_out is not None and wf_in > 0 and wf_out <= 0:
+        notes.append(
+            f"Warning: in-sample expectancy is {wf_in}R but out-of-sample is {wf_out}R. "
+            "That gap is the signature of fitting to noise."
+        )
+    notes.append(
+        "Historical measurement over resolved predictions only, scored point-in-time "
+        "against bars after each signal. Past results are not a forecast and no success "
+        "rate is guaranteed."
+    )
+
+    acc_meta = history.get("accuracy") or {}
+    excluded_map = acc_meta.get("excludedWeekend") or {}
+    weekend_days = sorted(excluded_map.keys())
+    weekend_preds = sum(excluded_map.values())
+    if weekend_preds:
+        notes.insert(0, (
+            f"Excluded {weekend_preds} prediction(s) stored under {len(weekend_days)} "
+            "weekend date(s): markets are closed, so no bar exists to score them."
+        ))
+
+    return {
+        "basis": "resolved predictions only, scored point-in-time against bars AFTER each "
+                 "signal timestamp (exit_first = win, stop_first = loss; a bar spanning both "
+                 "resolves as a stop). Unresolved, unscoreable, and Saturday/Sunday-dated "
+                 "predictions are excluded, never counted as wins.",
+        "primaryMetric": "expectancyR",
+        "minSample": MIN_ACCURACY_SAMPLE,
+        "costBps": COST_BPS,
+        "forwardWindowMinutes": FORWARD_WINDOW_MINUTES or "to session close",
+        "excludedWeekendDays": sorted(weekend_days),
+        "excludedWeekendPredictions": weekend_preds,
+        "currentWeek": current,
+        "previousWeek": previous,
+        "weekOverWeekDeltaPts": delta,
+        "allTime": all_time,
+        "weeklyTrend": trend,
+        "walkForward": walk_forward,
+        "breakdown": {
+            "confidence": _rank_buckets(all_buckets, "confidence"),
+            "rating": _rank_buckets(all_buckets, "rating"),
+            "session": _rank_buckets(all_buckets, "session"),
+            "vixRegime": _rank_buckets(all_buckets, "vix"),
+            "bias": _rank_buckets(all_buckets, "bias"),
+            "symbol": _rank_buckets(all_buckets, "symbol"),
+        },
+        "notes": notes,
+    }
+
+
+def fetch_accuracy(validate=True):
+    """Score retained predictions point-in-time and report hit rate + expectancy.
+
+    Validation needs INTRADAY bars: a prediction is scored only against bars
+    after its signal timestamp, and daily bars carry no intraday timestamps to
+    compare against. Yahoo serves ~7 days of 1-minute history, which is why raw
+    prediction retention is 7 days — the two windows are deliberately matched.
+    Anything older is reported `unscoreable` rather than graded on a day range
+    that includes pre-signal price action.
+    """
+    history = _history_load()
+    today_key = date.today().isoformat()
+    warnings_out = []
+
+    if validate:
+        symbols = sorted({
+            p.get("symbol", "")
+            for payload in (history.get("days") or {}).values()
+            for p in payload.get("predictions", [])
+            if p.get("symbol")
+        })
+        if symbols:
+            frames = _fetch_intraday_frames(symbols[:ACCURACY_SYMBOL_LIMIT], "1m", "7d")
+            if frames:
+                history = _update_prediction_history(history, today_key, frames)
+                _history_save(history)        # prunes, and absorbs the rollup first
+                history = _history_load()
+            else:
+                warnings_out.append("No intraday bars returned; reporting stored outcomes unchanged.")
+                if _LAST_YFINANCE_ERROR:
+                    warnings_out.append(f"Provider error: {_LAST_YFINANCE_ERROR}")
+                    hint = _provider_hint(_LAST_YFINANCE_ERROR)
+                    if hint:
+                        warnings_out.append(f"Provider hint: {hint}")
+        else:
+            warnings_out.append("No stored predictions to validate yet.")
+
+    _accuracy_absorb(history)
+    summary = _accuracy_summary(history)
+    summary["generatedAt"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    summary["validated"] = bool(validate)
+    summary["rawRetentionDays"] = DAYTRADE_HISTORY_DAYS
+    summary["rollupRetentionDays"] = ACCURACY_RETENTION_DAYS
+    summary["warnings"] = warnings_out
+    summary["disclaimer"] = (
+        "Read-only historical measurement of past scanner predictions. "
+        "Not financial advice, not a forecast, and no guaranteed success rate."
+    )
+    return summary
+
+
 def fetch_speculative_daytrade(limit=5, validate_history=False):
     interval, period = "1m", "1d"
     today_key = date.today().isoformat()
@@ -779,6 +1710,10 @@ def fetch_speculative_daytrade(limit=5, validate_history=False):
     cached = _spec_daytrade_cache.get(cache_key)
     if cached and now - cached["t"] < SPEC_DAYTRADE_TTL:
         return cached["data"]
+
+    history = _history_load()
+    existing_today = history.get("days", {}).get(today_key, {})
+    existing_today_count = len(existing_today.get("predictions", []) or [])
 
     def build_setups(universe, category=None):
         scan_limit = max(limit, min(CAP_CATEGORY_SCAN_LIMIT if category else SPECULATIVE_SCAN_LIMIT, len(universe)))
@@ -799,6 +1734,10 @@ def fetch_speculative_daytrade(limit=5, validate_history=False):
                 setup["alertStatus"] = status
                 setup["alertReason"] = reason
                 setup["modelRule"] = "1m candles: rank range% + ATR% + volume pulse + VWAP/EMA alignment; remove active alert when stop invalidates."
+                # Tag geometry and regime at signal time so later analysis can
+                # slice outcomes without re-deriving conditions after the fact.
+                setup.update(_planned_geometry(setup))
+                setup["vixRegime"] = _vix_regime()
                 rows.append(setup)
             except Exception as e:
                 print(f"  WARN speculative setup {sym}: {e}", flush=True)
@@ -823,7 +1762,23 @@ def fetch_speculative_daytrade(limit=5, validate_history=False):
         top.extend(categories.get(key, {}).get("results", []))
     top.sort(key=lambda x: (x.get("variancePct", 0), x.get("alertStatus") == "active", x.get("speculativeScore", 0)), reverse=True)
 
-    history = _history_load()
+    prediction_day = today_key
+    if top:
+        counts = {}
+        for row in top:
+            k = row.get("signalDayPT")
+            if k:
+                counts[k] = counts.get(k, 0) + 1
+        if counts:
+            prediction_day = sorted(counts.items(), key=lambda kv: (kv[1], kv[0]))[-1][0]
+    if not _is_trading_day(prediction_day):
+        # Scanning on a weekend returns the last session's candles; filing them
+        # under Sat/Sun would create a row that can never be scored.
+        prediction_day = _previous_trading_day(date.fromisoformat(prediction_day)).isoformat()
+
+    # After-market pass can optionally validate prior predictions against realized
+    # intraday highs/lows. Never overwrite today's stored predictions when the
+    # provider returns no candle data (e.g., DNS outage, holiday, rate limit).
     if validate_history:
         history_symbols = sorted({
             p.get("symbol", "")
@@ -833,16 +1788,61 @@ def fetch_speculative_daytrade(limit=5, validate_history=False):
         }) or [p.get("symbol") for p in top if p.get("symbol")]
         frames_5d = _fetch_intraday_frames(history_symbols[:8], "1m", "5d")
         history = _update_prediction_history(history, today_key, frames_5d)
-    history.setdefault("days", {})[today_key] = {
-        "generatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "method": "NandaEdge speculative 1m candle skill",
-        "predictions": [_compact_setup(x) for x in top],
-    }
-    _history_save(history)
+        # Persist outcome updates even if today's live scan yields no data.
+        if not top:
+            _history_save(history)
+
+    warnings_out = []
+    # Late-scan guard: a signal minutes before the close cannot resolve a
+    # multi-percent target, so every such prediction ends up unresolved.
+    late = [x for x in top if x.get("lateSignal")]
+    if late:
+        mins = [x.get("minutesToClose") for x in late if isinstance(x.get("minutesToClose"), (int, float))]
+        soonest = min(mins) if mins else None
+        warnings_out.append(
+            f"{len(late)} of {len(top)} signals fired within {MIN_MINUTES_TO_CLOSE} minutes of the "
+            f"13:00 PT close (closest: {soonest} min). Too little runway to reach target; "
+            "scan mid-session for scoreable predictions."
+        )
+    tight = [x for x in top if x.get("stopTooTight")]
+    if tight:
+        warnings_out.append(
+            f"{len(tight)} of {len(top)} setups have a stop closer than {MIN_STOP_ATR_MULT}x ATR "
+            "and will likely be stopped out by normal noise."
+        )
+    if not top:
+        warnings_out.append("No intraday candle data returned; leaving stored prediction history unchanged.")
+        if _LAST_YFINANCE_ERROR:
+            warnings_out.append(f"Provider error: {_LAST_YFINANCE_ERROR}")
+            hint = _provider_hint(_LAST_YFINANCE_ERROR)
+            if hint:
+                warnings_out.append(f"Provider hint: {hint}")
+    else:
+        if prediction_day != today_key:
+            warnings_out.append(f"Signal candles map to {prediction_day} (PT); storing predictions under that trading day instead of {today_key}.")
+        existing_day = history.get("days", {}).get(prediction_day, {})
+        existing_day_count = len(existing_day.get("predictions", []) or [])
+        if existing_day_count and prediction_day != today_key:
+            warnings_out.append(f"Predictions already exist for {prediction_day}; leaving stored history unchanged.")
+        else:
+            day_payload = {
+                "generatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "method": "NandaEdge speculative 1m candle skill",
+                "predictions": [_compact_setup(x) for x in top],
+            }
+            merged = _history_merge_day(prediction_day, day_payload)
+            if merged is not None:
+                history = merged
+            else:
+                history.setdefault("days", {})[prediction_day] = day_payload
 
     lightweight_top = [_compact_live_setup(x) for x in top]
     active_alerts = [x for x in lightweight_top if x.get("alertStatus") not in ("invalid", "exit_hit")]
+    # Refresh the rollup in-memory too: a read-only pass (no save, so no prune)
+    # must still report accuracy that includes the raw days currently on disk.
+    _accuracy_absorb(history)
     compact_history = _compact_history(history)
+    accuracy = _accuracy_summary(history)
     data = {
         "generatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "interval": interval,
@@ -852,7 +1852,11 @@ def fetch_speculative_daytrade(limit=5, validate_history=False):
         "categories": categories,
         "activeAlerts": active_alerts,
         "history": compact_history,
+        "accuracy": accuracy,
         "learningNotes": _learning_notes(history),
+        "warnings": warnings_out,
+        "storedPredictionsToday": existing_today_count,
+        "predictionDay": prediction_day,
         "disclaimer": "Read-only educational scanner. No live trading, no order routing, and no guaranteed success rate.",
     }
     _spec_daytrade_cache[cache_key] = {"t": time.time(), "data": data}
@@ -994,6 +1998,7 @@ def fetch_tech(syms=None):
                 "volRatio":    round(vol_ratio, 2) if vol_ratio else None,
             }
             _tech_cache[sym] = {"t": now, "data": out[sym]}
+            _trim_cache(_tech_cache, 256)
         except Exception as e:
             print(f"  WARN tech {sym}: {e}", flush=True)
             out[sym] = None
@@ -1077,6 +2082,7 @@ def fetch_forecast(syms=None):
                 "method":   "GBM (μ,σ from 2yr daily log-returns)",
             }
             _fcst_cache[sym] = {"t": now, "data": out[sym]}
+            _trim_cache(_fcst_cache, 256)
         except Exception as e:
             print(f"  WARN forecast {sym}: {e}", flush=True)
             out[sym] = None
@@ -1245,13 +2251,17 @@ def _fetch_yahoo_spot(sym):
     tk = yf.Ticker(sym)
     spot = 0.0
     try:
-        spot_info = tk.fast_info
-        spot = float(spot_info.last_price or 0)
+        spot_info, provider_log = _quiet_call(lambda: tk.fast_info)
+        if provider_log:
+            _set_last_yfinance_error(provider_log.splitlines()[0])
+        spot = float(getattr(spot_info, "last_price", 0) or 0)
     except Exception:
         spot = 0.0
     if spot <= 0:
         try:
-            hist = tk.history(period="5d", interval="1d", auto_adjust=False)
+            hist, provider_log = _quiet_call(lambda: tk.history(period="5d", interval="1d", auto_adjust=False))
+            if provider_log:
+                _set_last_yfinance_error(provider_log.splitlines()[0])
             if hist is not None and not hist.empty:
                 spot = float(hist["Close"].dropna().iloc[-1])
         except Exception:
@@ -1448,6 +2458,12 @@ def fetch_options(sym, opt_type, dte_min, dte_max, delta_min, delta_max, top_n=5
     - Supports 30/60/90 DTE ranges through query params
     - Adds AI confidence, trade rating, and why-this-trade explanations
     """
+    if delta_min is None:
+        delta_min = 0.0
+    if delta_max is None:
+        delta_max = 1.0
+    if delta_min > delta_max:
+        delta_min, delta_max = delta_max, delta_min
     cache_key = (sym, opt_type, dte_min, dte_max, round(delta_min, 2), round(delta_max, 2), top_n)
     now = time.time()
 
@@ -1618,6 +2634,7 @@ def fetch_history(syms, days=90):
                 closes = [round(float(x), 2) for x in d["Close"].tail(days).tolist()]
                 out[sym] = closes
                 _hist_cache[(sym, days)] = {"t": now, "data": closes}
+                _trim_cache(_hist_cache, 256)
             except Exception as e:
                 print(f"  WARN history {sym}: {e}", flush=True)
                 out[sym] = []
@@ -1682,6 +2699,7 @@ def fetch_earnings(syms):
             except Exception as e:
                 print(f"  WARN earnings {sym}: {e}", flush=True)
             _earn_cache[sym] = {"t": now, "data": data}
+            _trim_cache(_earn_cache, 256)
             out[sym] = data
     return out
 
@@ -1890,6 +2908,17 @@ class Handler(BaseHTTPRequestHandler):
             print(f"{len(data.get('candidates', []))} cand in {time.time()-t0:.1f}s", flush=True)
             self._send(200, "application/json", json.dumps(data).encode())
 
+        elif path == "/accuracy":
+            # ?validate=0 reads stored outcomes without a provider call.
+            validate = (qs.get("validate", ["1"])[0] or "1").lower() in {"1", "true", "yes"}
+            print(f"  [{time.strftime('%H:%M:%S')}] /accuracy validate={validate} ...", end=" ", flush=True)
+            t0 = time.time()
+            data = fetch_accuracy(validate)
+            cw = (data.get("currentWeek") or {}).get("accuracyPct")
+            pw = (data.get("previousWeek") or {}).get("accuracyPct")
+            print(f"this={cw}% prev={pw}% in {time.time()-t0:.1f}s", flush=True)
+            self._send(200, "application/json", json.dumps(data).encode())
+
         elif path == "/feargreed":
             data = fetch_fg()
             self._send(200, "application/json", json.dumps(data or {}).encode())
@@ -1920,15 +2949,35 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
-# Threaded server so /technicals doesn't block /quotes
+# Threaded server so /technicals doesn't block /quotes.
+# Concurrency is bounded: one unbounded thread per connection let a burst (or a
+# slow client holding sockets open) exhaust memory on a small cloud instance.
+MAX_CONCURRENT_REQUESTS = int(os.environ.get("MAX_CONCURRENT_REQUESTS", "32"))
+REQUEST_SOCKET_TIMEOUT  = float(os.environ.get("REQUEST_SOCKET_TIMEOUT", "120"))
+_REQUEST_SLOTS = threading.BoundedSemaphore(MAX_CONCURRENT_REQUESTS)
+
+
 class ThreadedServer(HTTPServer):
+    daemon_threads = True
+
     def process_request(self, request, client_address):
+        if not _REQUEST_SLOTS.acquire(timeout=5):
+            # Shed load rather than queue unboundedly.
+            print("  WARN request rejected: concurrency limit reached", flush=True)
+            self.shutdown_request(request)
+            return
         threading.Thread(target=self._handle, args=(request, client_address), daemon=True).start()
+
     def _handle(self, request, client_address):
         try:
+            # Without a timeout a half-open connection pins a thread forever.
+            request.settimeout(REQUEST_SOCKET_TIMEOUT)
             self.finish_request(request, client_address)
+        except (socket.timeout, TimeoutError, ConnectionResetError, BrokenPipeError):
+            pass
         finally:
             self.shutdown_request(request)
+            _REQUEST_SLOTS.release()
 
 # ── Main ───────────────────────────────────────────────
 if __name__ == "__main__":
@@ -1948,7 +2997,7 @@ if __name__ == "__main__":
     print(f"  Quotes      → {base}/quotes", flush=True)
     print(f"  Technicals  → {base}/technicals", flush=True)
     print(f"  Fear/Greed  → {base}/feargreed", flush=True)
-    print(f"  Press Ctrl+C to stop.\n", flush=True)
+    print("  Press Ctrl+C to stop.\n", flush=True)
 
     server = ThreadedServer((HOST, PORT), Handler)
     try:
