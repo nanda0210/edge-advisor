@@ -9,6 +9,12 @@ description: Reference workflow and product rules for maintaining NandaEdge Advi
 
 - Preserve the product name exactly as `NandaEdge Advisor`.
 - Work in `/Users/rajamac/myprojects/edge-advisor` unless the user gives a different path.
+- **Keep `TECH-STACK.md` current.** Update it in the SAME commit as any change
+  that adds, removes, or swaps a technology, dependency, data provider, API
+  endpoint, deployment target, persistence/retention model, auth mechanism, or
+  scoring method. Its "Keeping this current" section lists the triggers. This
+  is a standing instruction from the user — do not wait to be reminded, and do
+  not put stack documentation in `index.html` or the dashboard UI.
 - Keep the app read-only for market intelligence. Do not add live trading, order placement, account access, portfolio/account endpoints, or broker account scopes.
 - Do not hardcode secrets. Load credentials from environment variables or local `.env`; keep `.env` gitignored.
 - Keep changes minimal, safe, and backward compatible with the existing static frontend and Python backend.
@@ -135,3 +141,5 @@ When finishing a NandaEdge task, report:
 - How to run locally.
 - How to test `/options` for `NVDA`.
 - Any provider fallback behavior observed, such as Schwab/Tradier skipped because credentials are not configured.
+- Whether `TECH-STACK.md` needed updating, and confirmation that it was — or an
+  explicit statement that nothing on its trigger list changed.
