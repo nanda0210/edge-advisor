@@ -38,11 +38,15 @@ Use these Schwab variables:
 ```text
 SCHWAB_APP_KEY=
 SCHWAB_APP_SECRET=
-SCHWAB_CALLBACK_URL=https://edge-advisor-api.onrender.com/schwab/callback
+SCHWAB_CALLBACK_URL=https://nanda0210.github.io/edge-advisor/schwab/callback
 SCHWAB_ACCESS_TOKEN=
 SCHWAB_REFRESH_TOKEN=
 SCHWAB_BASE_URL=https://api.schwabapi.com
 ```
+
+The callback is the **static GitHub Pages page** (`schwab/callback/index.html`),
+which is also what `render.yaml` sets. This must match the URL registered in the
+Schwab Developer Portal exactly.
 
 ## Callback URL Requirement
 
@@ -68,11 +72,10 @@ SCHWAB_CALLBACK_URL=https://nanda0210.github.io/edge-advisor/schwab/callback
 
 The callback page is static and local-helper-only: it does not store secrets, tokens, or account data. It only shows the command needed to exchange the short-lived Schwab authorization code on your Mac.
 
-If you prefer the Render service callback, use this exact HTTPS URL instead and make `.env` match it exactly:
-
-```text
-https://edge-advisor-api.onrender.com/schwab/callback
-```
+Do **not** use a Render callback URL. `server.py` serves no `/schwab/callback`
+route, so `https://edge-advisor-api.onrender.com/schwab/callback` fails — and
+because the auth gate runs before routing, it returns `401` rather than an
+obvious `404`, which makes the cause hard to spot mid-OAuth.
 
 ## Codex OAuth Helper Method
 
