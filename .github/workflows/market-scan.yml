@@ -8,15 +8,19 @@ name: Market-hours scan
 #
 # Times are UTC and cron has no DST awareness, so each slot is chosen to land
 # inside 06:30-13:00 PT under BOTH PDT (UTC-7) and PST (UTC-8).
-#   16:00 UTC -> 09:00 PDT / 08:00 PST   (mid-morning)
-#   18:00 UTC -> 11:00 PDT / 10:00 PST   (midday)
-#   22:00 UTC -> 15:00 PDT / 14:00 PST   (after the close -> validate)
+#   16:17 UTC -> 09:17 PDT / 08:17 PST   (mid-morning)
+#   18:37 UTC -> 11:37 PDT / 10:37 PST   (midday)
+#   22:07 UTC -> 15:07 PDT / 14:07 PST   (after the close -> validate)
+#
+# Minutes are deliberately OFF the hour. GitHub runs every repo's :00 schedules
+# at once, and under that load scheduled runs are delayed or dropped entirely —
+# the first version of this file used :00 and never fired at all.
 
 on:
   schedule:
-    - cron: "0 16 * * 1-5"
-    - cron: "0 18 * * 1-5"
-    - cron: "0 22 * * 1-5"
+    - cron: "17 16 * * 1-5"
+    - cron: "37 18 * * 1-5"
+    - cron: "7 22 * * 1-5"
   workflow_dispatch:
     inputs:
       validate:
@@ -35,10 +39,12 @@ jobs:
       - name: Decide whether this run validates
         id: mode
         run: |
-          # The 22:00 UTC slot is the after-close pass; the others are live scans.
+          # The 22:07 UTC slot is the after-close pass; the others are live scans.
+          # NOTE: this string must match the cron above exactly. If they drift,
+          # the after-close run quietly stops validating.
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "validate=${{ inputs.validate }}" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.event.schedule }}" = "0 22 * * 1-5" ]; then
+          elif [ "${{ github.event.schedule }}" = "7 22 * * 1-5" ]; then
             echo "validate=true" >> "$GITHUB_OUTPUT"
           else
             echo "validate=false" >> "$GITHUB_OUTPUT"
