@@ -3173,6 +3173,16 @@ function applyView(){
   }
 
   pw.value = demo ? DEMO_PASSWORD : '';
+  // Demo keeps the credential masked: the reveal toggle is hidden and the
+  // field is forced back to type=password in case it was toggled in the user
+  // view. There is no reason to display a password the visitor never typed.
+  pw.type = 'password';
+  const tog = document.getElementById('login-pw-toggle');
+  if (tog) {
+    tog.style.display = demo ? 'none' : '';
+    tog.setAttribute('aria-label', 'Show password');
+    tog.setAttribute('aria-pressed', 'false');
+  }
   const cf = document.getElementById('login-confirm'); if (cf) cf.value = '';
   pw.classList.remove('invalid');
   if (msg) { msg.className='lg-msg'; msg.textContent=''; }
