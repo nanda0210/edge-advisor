@@ -2998,7 +2998,10 @@ async function tryUnlock(token, persist, source){
   }
   if (res.status === 429 || body.status === 'rate_limited') {
     showLogin('Too many failed attempts — wait 15 minutes');
-    return false;
+    // Signalled distinctly so the caller does not overwrite this with
+    // "Wrong password". A lockout and a bad password are different problems
+    // and reporting the wrong one sends people hunting a non-existent fault.
+    return 'rate_limited';
   }
   if (source === 'stored') clearAuthToken();
   return false;
@@ -3014,7 +3017,14 @@ async function handleLoginSubmit(){
   try {
     const token = await sha256Hex(pw);
     const ok = await tryUnlock(token, persist, 'input');
-    if (!ok) { msg.className='lg-msg err'; msg.textContent='Wrong password'; document.getElementById('login-pw').select(); }
+    if (ok === 'rate_limited') {
+      // tryUnlock already showed the lockout message — leave it in place.
+      msg.className='lg-msg err';
+      msg.textContent='Too many failed attempts — wait 15 minutes before retrying';
+    } else if (!ok) {
+      msg.className='lg-msg err'; msg.textContent='Wrong password';
+      document.getElementById('login-pw').select();
+    }
   } catch(e) {
     msg.className='lg-msg err'; msg.textContent='Network error — try again';
   } finally { btn.disabled = false; }
@@ -3152,7 +3162,8 @@ document.getElementById('login-pw-toggle').addEventListener('click', () => {
   const stored = getAuthToken();
   if (stored) {
     const ok = await tryUnlock(stored, !!localStorage.getItem(AUTH_KEY), 'stored');
-    if (ok) return;
+    if (ok === true) return;                  // authenticated, dashboard booted
+    if (ok === 'rate_limited') return;        // keep tryUnlock's lockout message
   }
   showLogin('');
 })();
