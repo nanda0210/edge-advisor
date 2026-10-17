@@ -53,7 +53,18 @@ def _load_dotenv(path=None):
 _load_dotenv()
 
 # ── Auth (optional: set AUTH_TOKEN_HASH in env to enable) ──
+# Two credentials, two roles:
+#   AUTH_TOKEN_HASH  — the owner's password
+#   DEMO_TOKEN_HASH  — a shared, publicly-known demo password
+# Both are SHA-256 of the password, lowercase hex. The demo credential is
+# deliberately not a secret; it gates a read-only dashboard.
 AUTH_HASH = (os.environ.get("AUTH_TOKEN_HASH", "") or "").strip().lower()
+DEMO_HASH = (os.environ.get("DEMO_TOKEN_HASH", "") or "").strip().lower()
+# Session length the client is told to enforce, per role.
+SESSION_MINUTES_BY_ROLE = {
+    "demo": int(os.environ.get("DEMO_SESSION_MINUTES", "15") or "15"),
+    "user": int(os.environ.get("USER_SESSION_MINUTES", "15") or "15"),
+}
 _AUTH_FAILS = {}            # ip -> [timestamp, ...] within last 15 min
 _AUTH_FAIL_WINDOW = 900     # 15 min
 _AUTH_FAIL_MAX    = 10
@@ -74,20 +85,30 @@ def _record_fail(ip):
     _AUTH_FAILS.setdefault(ip, []).append(time.time())
 
 def _auth_state(handler):
-    """Returns (ok: bool, status: 'open'|'ok'|'unauthorized'|'rate_limited')."""
-    if not AUTH_HASH:
-        return True, "open"
+    """Returns (ok, status, role).
+
+    status: 'open' | 'ok' | 'unauthorized' | 'rate_limited'
+    role:   'open' | 'user' | 'demo' | None
+    """
+    if not AUTH_HASH and not DEMO_HASH:
+        return True, "open", "open"
     ip = _client_ip(handler)
     if _rate_limited(ip):
-        return False, "rate_limited"
+        return False, "rate_limited", None
     h = handler.headers.get("Authorization", "")
     if h.lower().startswith("bearer "):
         token = h[7:].strip().lower()
         # Constant-time: a plain == leaks match length/prefix through timing.
-        if hmac.compare_digest(token, AUTH_HASH):
-            return True, "ok"
+        # Both are checked so the comparison count does not reveal which
+        # credential was tried.
+        is_user = bool(AUTH_HASH) and hmac.compare_digest(token, AUTH_HASH)
+        is_demo = bool(DEMO_HASH) and hmac.compare_digest(token, DEMO_HASH)
+        if is_user:
+            return True, "ok", "user"
+        if is_demo:
+            return True, "ok", "demo"
     _record_fail(ip)
-    return False, "unauthorized"
+    return False, "unauthorized", None
 
 warnings.filterwarnings("ignore")
 
@@ -2787,7 +2808,13 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(404, "text/plain", b"index.html not found")
             return
         if path == "/health":
-            self._send(200, "application/json", json.dumps({"ok": True, "authRequired": bool(AUTH_HASH)}).encode())
+            self._send(200, "application/json", json.dumps({
+                "ok": True,
+                "authRequired": bool(AUTH_HASH or DEMO_HASH),
+                "demoAvailable": bool(DEMO_HASH),
+                "userLoginAvailable": bool(AUTH_HASH),
+                "sessionMinutes": SESSION_MINUTES_BY_ROLE,
+            }).encode())
             return
         if path == "/docs/whatsapp-stock-feed":
             try:
@@ -2797,10 +2824,16 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(404, "text/plain", b"WHATSAPP_STOCK_FEED.md not found")
             return
 
-        # All endpoints below require auth (when AUTH_TOKEN_HASH is set)
-        ok, status = _auth_state(self)
+        # All endpoints below require auth (when a hash is configured)
+        ok, status, role = _auth_state(self)
         if path == "/auth":
-            payload = {"ok": ok, "status": status, "authRequired": bool(AUTH_HASH)}
+            payload = {
+                "ok": ok,
+                "status": status,
+                "role": role,
+                "authRequired": bool(AUTH_HASH or DEMO_HASH),
+                "sessionMinutes": SESSION_MINUTES_BY_ROLE.get(role or "", 15),
+            }
             code = 200 if ok else (429 if status == "rate_limited" else 401)
             self._send(code, "application/json", json.dumps(payload).encode())
             return

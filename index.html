@@ -487,6 +487,25 @@ tr:hover td{background:var(--hover);transition:.12s;}
 #login-card button:disabled{opacity:.5;cursor:default;}
 #login-card .lg-msg{margin-top:14px;font-size:12px;text-align:center;min-height:18px;}
 #login-card .lg-msg.err{color:var(--red);} #login-card .lg-msg.ok{color:var(--green);}
+#login-card .lg-modes{display:flex;gap:6px;margin-bottom:12px;background:var(--input);
+  border:1px solid var(--border);border-radius:6px;padding:3px;}
+#login-card .lg-mode{flex:1;margin:0;padding:8px 6px;font-size:12px;font-weight:700;
+  background:transparent;color:var(--muted);border:none;border-radius:4px;cursor:pointer;}
+#login-card .lg-mode.active{background:var(--accent);color:#fff;}
+#login-card .lg-note{font-size:11px;color:var(--muted);margin-bottom:16px;line-height:1.45;}
+#login-card .lg-hint{font-size:11.5px;margin-top:7px;display:none;align-items:center;gap:5px;}
+#login-card .lg-hint.show{display:flex;}
+#login-card #login-caps{color:var(--amber,#d97706);font-weight:600;}
+#login-card #login-attempts{color:var(--muted);justify-content:center;}
+#login-card #login-attempts.warn{color:var(--red);font-weight:600;}
+#login-card input.invalid{border-color:var(--red)!important;}
+.session-pill{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--muted);
+  border:1px solid var(--border);border-radius:20px;padding:4px 10px;white-space:nowrap;}
+.session-pill b{color:var(--text);font-variant-numeric:tabular-nums;font-weight:700;}
+.session-pill.low b{color:var(--red);}
+.session-pill button{background:transparent;border:none;color:var(--accent);font:inherit;
+  font-weight:700;cursor:pointer;padding:0 0 0 4px;border-left:1px solid var(--border);margin-left:2px;}
+.session-pill button:hover{text-decoration:underline;}
 .app-locked{display:none !important;}
 
 /* ===== Site Review 001 - Feature 5 (beginner mode) + Feature 13 (mobile) ===== */
@@ -542,6 +561,11 @@ td.heat{border-radius:4px;font-weight:700;}
   <div id="login-card">
     <div class="lg-title">Nanda<span>Edge</span> Advisor</div>
     <div class="lg-sub">Enter password to access dashboard</div>
+    <div class="lg-modes" role="tablist">
+      <button id="mode-demo" class="lg-mode active" type="button" role="tab" aria-selected="true">Demo login</button>
+      <button id="mode-user" class="lg-mode" type="button" role="tab" aria-selected="false">User login</button>
+    </div>
+    <div id="mode-note" class="lg-note">Read-only demo · password pre-filled · 15-minute session</div>
     <label for="login-pw">PASSWORD</label>
     <div class="pw-wrap">
       <input id="login-pw" class="pw-input" type="password" autocomplete="current-password" autofocus />
@@ -552,9 +576,11 @@ td.heat{border-radius:4px;font-weight:700;}
         </svg>
       </button>
     </div>
+    <div id="login-caps" class="lg-hint" role="status">⚠ Caps Lock is on</div>
     <div class="lg-row"><input id="login-remember" type="checkbox" checked /> <label for="login-remember" style="margin:0;">Remember on this device</label></div>
-    <button id="login-btn">Unlock</button>
-    <div id="login-msg" class="lg-msg"></div>
+    <button id="login-btn">Sign in</button>
+    <div id="login-msg" class="lg-msg" role="alert"></div>
+    <div id="login-attempts" class="lg-hint" role="status"></div>
   </div>
 </div>
 
@@ -567,6 +593,10 @@ td.heat{border-radius:4px;font-weight:700;}
     <div class="market-status">
       <div class="dot dot-green" id="mkt-dot"></div>
       <span id="mkt-label" style="color:var(--green);">LOADING...</span>
+    </div>
+    <div class="session-pill" id="session-pill" style="display:none;">
+      <span>Session <b id="session-left">15:00</b></span>
+      <button id="signout-btn" type="button">Sign out</button>
     </div>
     <div class="theme-wrap">
       <div class="theme-controls">
@@ -3041,27 +3071,138 @@ async function tryUnlock(token, persist, source){
   return false;
 }
 
+// The backend locks an IP out after this many failures in 15 minutes
+// (_AUTH_FAIL_MAX / _AUTH_FAIL_WINDOW in server.py). Mirrored here only to warn
+// the user before they hit it — the server remains the authority.
+const MAX_ATTEMPTS = 10;
+const ATTEMPTS_KEY = 'nandaedge.auth.fails.v1';
+
+function recordFailedAttempt(){
+  const now = Date.now();
+  let fails = [];
+  try { fails = JSON.parse(sessionStorage.getItem(ATTEMPTS_KEY) || '[]'); } catch(e) {}
+  fails = fails.filter(t => now - t < 15 * 60 * 1000);   // same rolling window
+  fails.push(now);
+  sessionStorage.setItem(ATTEMPTS_KEY, JSON.stringify(fails));
+  return fails.length;
+}
+function clearFailedAttempts(){ sessionStorage.removeItem(ATTEMPTS_KEY); }
+function renderAttempts(used){
+  const el = document.getElementById('login-attempts');
+  if (!el) return;
+  const left = Math.max(0, MAX_ATTEMPTS - used);
+  if (!used) { el.className = 'lg-hint'; el.textContent = ''; return; }
+  el.className = 'lg-hint show' + (left <= 3 ? ' warn' : '');
+  el.textContent = left > 0
+    ? `${left} attempt${left === 1 ? '' : 's'} left before a 15-minute lockout`
+    : 'Locked out — wait 15 minutes before retrying';
+}
+
+// ── Demo vs user login ───────────────────────────────
+// The demo password is deliberately public — it gates a read-only dashboard
+// and is pre-filled so a visitor can get in with one click.
+const DEMO_PASSWORD = 'Fantastic2026$';
+let LOGIN_MODE = 'demo';
+
+function setLoginMode(mode){
+  LOGIN_MODE = mode;
+  const pw   = document.getElementById('login-pw');
+  const note = document.getElementById('mode-note');
+  const msg  = document.getElementById('login-msg');
+  const dBtn = document.getElementById('mode-demo');
+  const uBtn = document.getElementById('mode-user');
+  if (!pw || !note) return;
+  const demo = mode === 'demo';
+  if (dBtn) { dBtn.classList.toggle('active', demo);  dBtn.setAttribute('aria-selected', String(demo)); }
+  if (uBtn) { uBtn.classList.toggle('active', !demo); uBtn.setAttribute('aria-selected', String(!demo)); }
+  note.textContent = demo
+    ? 'Read-only demo · password pre-filled · 15-minute session'
+    : 'Sign in with your own password · 15-minute session';
+  pw.value = demo ? DEMO_PASSWORD : '';
+  pw.classList.remove('invalid');
+  if (msg) { msg.className = 'lg-msg'; msg.textContent = ''; }
+  if (!demo) pw.focus();
+}
+
+function wireLoginExtras(){
+  const pw = document.getElementById('login-pw');
+  const caps = document.getElementById('login-caps');
+  const dBtn = document.getElementById('mode-demo');
+  const uBtn = document.getElementById('mode-user');
+  if (dBtn) dBtn.addEventListener('click', () => setLoginMode('demo'));
+  if (uBtn) uBtn.addEventListener('click', () => setLoginMode('user'));
+  if (!pw || !caps) return;
+  // Caps Lock silently breaks a correct password; warn rather than let the
+  // user conclude the password is wrong.
+  const checkCaps = e => {
+    const on = e.getModifierState && e.getModifierState('CapsLock');
+    caps.className = 'lg-hint' + (on ? ' show' : '');
+  };
+  pw.addEventListener('keydown', checkCaps);
+  pw.addEventListener('keyup', checkCaps);
+  pw.addEventListener('blur', () => { caps.className = 'lg-hint'; });
+  pw.addEventListener('input', () => {
+    pw.classList.remove('invalid');
+    const msg = document.getElementById('login-msg');
+    if (msg && msg.classList.contains('err')) { msg.className = 'lg-msg'; msg.textContent = ''; }
+  });
+  pw.addEventListener('keydown', e => { if (e.key === 'Enter') handleLoginSubmit(); });
+}
+
 async function handleLoginSubmit(){
-  const pw     = document.getElementById('login-pw').value;
+  const input  = document.getElementById('login-pw');
+  const pw     = input.value;
   const persist= document.getElementById('login-remember').checked;
   const btn    = document.getElementById('login-btn');
   const msg    = document.getElementById('login-msg');
-  if (!pw) { msg.className='lg-msg err'; msg.textContent='Enter a password'; return; }
+  if (!pw) {
+    input.classList.add('invalid'); input.focus();
+    msg.className='lg-msg err'; msg.textContent='Enter your password';
+    return;
+  }
+  input.classList.remove('invalid');
   btn.disabled = true; msg.className='lg-msg'; msg.textContent='Verifying…';
   try {
     const token = await sha256Hex(pw);
     const ok = await tryUnlock(token, persist, 'input');
-    if (ok === 'rate_limited') {
+    if (ok === true) {
+      clearFailedAttempts();
+      renderAttempts(0);
+      msg.className='lg-msg ok'; msg.textContent='Signed in';
+    } else if (ok === 'rate_limited') {
       // tryUnlock already showed the lockout message — leave it in place.
       msg.className='lg-msg err';
       msg.textContent='Too many failed attempts — wait 15 minutes before retrying';
-    } else if (!ok) {
+      renderAttempts(MAX_ATTEMPTS);
+    } else {
+      renderAttempts(recordFailedAttempt());
       msg.className='lg-msg err'; msg.textContent='Wrong password';
-      document.getElementById('login-pw').select();
+      input.classList.add('invalid'); input.select();
     }
   } catch(e) {
     msg.className='lg-msg err'; msg.textContent='Network error — try again';
   } finally { btn.disabled = false; }
+}
+
+// ── Session countdown + sign out ─────────────────────
+function renderSessionPill(){
+  const pill = document.getElementById('session-pill');
+  const left = document.getElementById('session-left');
+  if (!pill || !left) return;
+  const exp = sessionExpiresAt();
+  if (!exp || sessionExpired()) { pill.style.display = 'none'; return; }
+  const ms = Math.max(0, exp - Date.now());
+  const m = Math.floor(ms / 60000), s = Math.floor((ms % 60000) / 1000);
+  left.textContent = `${m}:${String(s).padStart(2,'0')}`;
+  pill.classList.toggle('low', ms < 2 * 60 * 1000);
+  pill.style.display = 'flex';
+}
+function signOut(){
+  clearAuthToken();
+  clearFailedAttempts();
+  const pill = document.getElementById('session-pill');
+  if (pill) pill.style.display = 'none';
+  showLogin('Signed out');
 }
 
 // ── BOOT ──────────────────────────────────────────────
@@ -3202,16 +3343,31 @@ document.getElementById('login-pw-toggle').addEventListener('click', () => {
   showLogin('');
 })();
 
+// Login-page wiring: mode switcher, caps-lock warning, attempt counter.
+wireLoginExtras();
+setLoginMode('demo');
+const _signoutBtn = document.getElementById('signout-btn');
+if (_signoutBtn) _signoutBtn.addEventListener('click', signOut);
+
 // Idle watchdog: without this an abandoned tab stays on screen until the user
-// clicks something. Checks every 30s so the lockout is close to on-time.
+// clicks something. The countdown ticks every second; the expiry check is
+// cheap enough to run alongside it.
 (function sessionWatchdog(){
   setInterval(() => {
-    if (!sessionExpiresAt()) return;          // not signed in
+    if (!sessionExpiresAt()) {
+      const pill = document.getElementById('session-pill');
+      if (pill) pill.style.display = 'none';
+      return;                                  // not signed in
+    }
     if (sessionExpired()) {
       clearAuthToken();
+      const pill = document.getElementById('session-pill');
+      if (pill) pill.style.display = 'none';
       showLogin(`Session timed out after ${SESSION_MINUTES} minutes — please sign in again`);
+      return;
     }
-  }, 30000);
+    renderSessionPill();
+  }, 1000);
 })();
 </script>
 
