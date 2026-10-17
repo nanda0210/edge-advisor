@@ -60,6 +60,7 @@ Only three, all in `requirements.txt`:
 | `yfinance` | Quotes, OHLCV history, intraday candles, options fallback |
 | `pandas` | Candle DataFrames, time-indexed filtering, resampling |
 | `numpy` | Technical indicators and the GBM forecast model |
+| `psycopg[binary]` | Postgres driver for user accounts (production only) |
 
 ## Frontend
 
@@ -89,9 +90,23 @@ Every options response reports which provider served it, plus
 
 ## Authentication and secrets
 
-- **Shared-password gate.** `AUTH_TOKEN_HASH` holds `SHA-256(password)`; the
-  browser sends the hash as a Bearer token. The plaintext password exists only
-  in the user's head.
+Two login paths:
+
+**Demo** — shared-password gate. `DEMO_TOKEN_HASH` holds `SHA-256(password)`;
+the browser sends the hash as a Bearer token. The demo password is deliberately
+public and pre-filled on the login page; it gates a read-only dashboard.
+
+**User accounts** (`accounts.py`) — email as username, salted **PBKDF2-SHA256**
+at 100,000 rounds, email-verification links, password reset, and **server-side
+sessions with real expiry**. Mirrors the Resume Hub (myjobandcareer.com) design.
+Session tokens are random and stored server-side, so a 15-minute session is
+enforced by the backend rather than trusted to the browser. Verification and
+reset mail goes out over SMTP (Resend), with a development fallback that
+surfaces the link when SMTP is unconfigured rather than stranding the user.
+
+- **Legacy shared gate.** `AUTH_TOKEN_HASH` still works as an owner password,
+  checked in constant time alongside the demo hash so timing does not reveal
+  which credential was tried.
 - **Per-IP rate limiting** — 10 failures per 15 minutes returns `429`.
 - **`/health` is public** (so the frontend can discover whether auth is on);
   every other endpoint is gated.
@@ -102,7 +117,18 @@ Every options response reports which provider served it, plus
 
 ## Persistence
 
-- **A single JSON file**, `daytrade_history.json` — no database, no ORM.
+Two stores, chosen for different durability needs.
+
+**User accounts — Postgres** (Neon/Supabase free tier) via `DATABASE_URL`.
+Accounts must survive restarts, and Render's free tier has an ephemeral
+filesystem, so a local database would lose every account whenever the service
+sleeps. `accounts.py` falls back to **SQLite** when `DATABASE_URL` is unset, so
+the logic is testable locally without a live database — that fallback is for
+development only and must not be relied on in production.
+
+**Prediction history — a single JSON file**, `daytrade_history.json`:
+
+- No database, no ORM.
 - **Atomic writes** — temp file + `fsync` + `os.replace`, serialized under a
   lock, so a crash or two concurrent scans cannot truncate it or drop a day.
 - **Two retention tiers**: raw predictions for 7 days (matching Yahoo's
@@ -161,7 +187,7 @@ Recorded because they are decisions, not omissions:
 |---|---|
 | Web framework (Flask/FastAPI/Django) | One stdlib module keeps the free-tier footprint small and deployment dependency-free |
 | Frontend framework / bundler | No build step; GitHub Pages serves the file as-is |
-| Database | A single JSON file with atomic writes covers 7 days of predictions |
+| Database for prediction history | A single JSON file with atomic writes covers 7 days of predictions; Postgres is used only where durability is required, for accounts |
 | Paid AI or LLM APIs | All scoring is deterministic arithmetic — no per-use cost |
 | CDN-hosted assets | Self-contained page; nothing to break or leak externally |
 | Background polling | Explicit refresh and bounded watch windows protect the memory budget |

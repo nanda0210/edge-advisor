@@ -5,3 +5,6 @@ __pycache__/
 daytrade_history.json
 whatsapp_stock_feed.json
 whatsapp-feeds/
+accounts.db
+accounts.db-wal
+accounts.db-shm
