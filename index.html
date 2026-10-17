@@ -493,6 +493,13 @@ tr:hover td{background:var(--hover);transition:.12s;}
   background:transparent;color:var(--muted);border:none;border-radius:4px;cursor:pointer;}
 #login-card .lg-mode.active{background:var(--accent);color:#fff;}
 #login-card .lg-note{font-size:11px;color:var(--muted);margin-bottom:16px;line-height:1.45;}
+#login-card .lg-field{margin-bottom:12px;}
+#login-card input[type=email]{width:100%;background:var(--input);border:1px solid var(--border);
+  border-radius:5px;padding:11px 12px;color:var(--text);font-size:14px;font-family:inherit;outline:none;}
+#login-card input[type=email]:focus{border-color:var(--accent);}
+#login-card .lg-links{display:flex;justify-content:space-between;gap:10px;margin-top:14px;font-size:11.5px;}
+#login-card .lg-links a{color:var(--accent);text-decoration:none;font-weight:600;}
+#login-card .lg-links a:hover{text-decoration:underline;}
 #login-card .lg-hint{font-size:11.5px;margin-top:7px;display:none;align-items:center;gap:5px;}
 #login-card .lg-hint.show{display:flex;}
 #login-card #login-caps{color:var(--amber,#d97706);font-weight:600;}
@@ -566,7 +573,13 @@ td.heat{border-radius:4px;font-weight:700;}
       <button id="mode-user" class="lg-mode" type="button" role="tab" aria-selected="false">User login</button>
     </div>
     <div id="mode-note" class="lg-note">Read-only demo · password pre-filled · 15-minute session</div>
-    <label for="login-pw">PASSWORD</label>
+
+    <div id="field-email" class="lg-field" style="display:none;">
+      <label for="login-email">EMAIL</label>
+      <input id="login-email" type="email" autocomplete="username" placeholder="you@example.com" />
+    </div>
+
+    <label for="login-pw" id="label-pw">PASSWORD</label>
     <div class="pw-wrap">
       <input id="login-pw" class="pw-input" type="password" autocomplete="current-password" autofocus />
       <button id="login-pw-toggle" class="pw-toggle" type="button" aria-label="Show password" aria-pressed="false">
@@ -577,10 +590,21 @@ td.heat{border-radius:4px;font-weight:700;}
       </button>
     </div>
     <div id="login-caps" class="lg-hint" role="status">⚠ Caps Lock is on</div>
-    <div class="lg-row"><input id="login-remember" type="checkbox" checked /> <label for="login-remember" style="margin:0;">Remember on this device</label></div>
+
+    <div id="field-confirm" class="lg-field" style="display:none;margin-top:12px;">
+      <label for="login-confirm">CONFIRM PASSWORD</label>
+      <input id="login-confirm" type="password" autocomplete="new-password" class="pw-input" />
+    </div>
+
+    <div id="row-remember" class="lg-row"><input id="login-remember" type="checkbox" checked /> <label for="login-remember" style="margin:0;">Remember on this device</label></div>
     <button id="login-btn">Sign in</button>
     <div id="login-msg" class="lg-msg" role="alert"></div>
     <div id="login-attempts" class="lg-hint" role="status"></div>
+    <div id="login-links" class="lg-links" style="display:none;">
+      <a href="#" id="link-signup">Create an account</a>
+      <a href="#" id="link-forgot">Forgot password?</a>
+      <a href="#" id="link-signin" style="display:none;">Back to sign in</a>
+    </div>
   </div>
 </div>
 
@@ -3102,26 +3126,95 @@ function renderAttempts(used){
 // The demo password is deliberately public — it gates a read-only dashboard
 // and is pre-filled so a visitor can get in with one click.
 const DEMO_PASSWORD = 'Fantastic2026$';
-let LOGIN_MODE = 'demo';
+let LOGIN_MODE = 'demo';     // 'demo' | 'user'
+let USER_VIEW  = 'signin';   // 'signin' | 'signup' | 'forgot' | 'reset'
+let RESET_TOKEN = '';
 
-function setLoginMode(mode){
-  LOGIN_MODE = mode;
-  const pw   = document.getElementById('login-pw');
+const VIEWS = {
+  signin: { note:'Sign in to your account · 15-minute session', btn:'Sign in',
+            email:true,  pw:true,  confirm:false, remember:true,  links:'signin' },
+  signup: { note:'Create an account · we will email you a verification link', btn:'Create account',
+            email:true,  pw:true,  confirm:true,  remember:false, links:'back' },
+  forgot: { note:'Enter your email and we will send a reset link', btn:'Send reset link',
+            email:true,  pw:false, confirm:false, remember:false, links:'back' },
+  reset:  { note:'Choose a new password', btn:'Update password',
+            email:false, pw:true,  confirm:true,  remember:false, links:'back' },
+};
+
+function show(id, on){ const el=document.getElementById(id); if (el) el.style.display = on ? '' : 'none'; }
+
+function applyView(){
+  const demo = LOGIN_MODE === 'demo';
+  const v = demo ? null : VIEWS[USER_VIEW];
+  const pw = document.getElementById('login-pw');
   const note = document.getElementById('mode-note');
-  const msg  = document.getElementById('login-msg');
+  const msg = document.getElementById('login-msg');
+  const btn = document.getElementById('login-btn');
   const dBtn = document.getElementById('mode-demo');
   const uBtn = document.getElementById('mode-user');
-  if (!pw || !note) return;
-  const demo = mode === 'demo';
   if (dBtn) { dBtn.classList.toggle('active', demo);  dBtn.setAttribute('aria-selected', String(demo)); }
   if (uBtn) { uBtn.classList.toggle('active', !demo); uBtn.setAttribute('aria-selected', String(!demo)); }
-  note.textContent = demo
-    ? 'Read-only demo · password pre-filled · 15-minute session'
-    : 'Sign in with your own password · 15-minute session';
+
+  note.textContent = demo ? 'Read-only demo · password pre-filled · 15-minute session' : v.note;
+  if (btn) btn.textContent = demo ? 'Sign in' : v.btn;
+
+  show('field-email',   !demo && v.email);
+  show('field-confirm', !demo && v.confirm);
+  show('row-remember',  demo || v.remember);
+  show('login-links',   !demo);
+  show('label-pw',      demo || v.pw);
+  const pwWrap = pw && pw.parentElement;
+  if (pwWrap) pwWrap.style.display = (demo || v.pw) ? '' : 'none';
+
+  if (!demo) {
+    show('link-signup', v.links === 'signin');
+    show('link-forgot', v.links === 'signin');
+    show('link-signin', v.links === 'back');
+  }
+
   pw.value = demo ? DEMO_PASSWORD : '';
+  const cf = document.getElementById('login-confirm'); if (cf) cf.value = '';
   pw.classList.remove('invalid');
-  if (msg) { msg.className = 'lg-msg'; msg.textContent = ''; }
-  if (!demo) pw.focus();
+  if (msg) { msg.className='lg-msg'; msg.textContent=''; }
+  renderAttempts(0);
+  if (!demo) {
+    const first = (v.email ? document.getElementById('login-email') : pw);
+    if (first) first.focus();
+  }
+}
+
+function setLoginMode(mode){ LOGIN_MODE = mode; USER_VIEW = 'signin'; applyView(); }
+function setUserView(view){ LOGIN_MODE = 'user'; USER_VIEW = view; applyView(); }
+
+async function postJSON(path, payload){
+  const res = await fetch(`${API_BASE}${path}`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(payload),
+  });
+  let body = {};
+  try { body = await res.json(); } catch(e) {}
+  return { status: res.status, body };
+}
+
+// A verification or reset link lands back on the dashboard with a query
+// parameter. Handle it before the login form is shown.
+async function handleAuthLinks(){
+  const p = new URLSearchParams(location.search);
+  const verify = p.get('verify'), reset = p.get('reset');
+  if (!verify && !reset) return false;
+  history.replaceState({}, '', location.pathname);   // don't leave the token in the URL
+  if (verify) {
+    const { status, body } = await postJSON('/api/verify', { token: verify });
+    setUserView('signin');
+    const msg = document.getElementById('login-msg');
+    msg.className = 'lg-msg ' + (status === 200 ? 'ok' : 'err');
+    msg.textContent = body.message || (status === 200 ? 'Email verified.' : 'That link is invalid or expired.');
+    if (status === 200 && body.email) document.getElementById('login-email').value = body.email;
+    return true;
+  }
+  RESET_TOKEN = reset;
+  setUserView('reset');
+  return true;
 }
 
 function wireLoginExtras(){
@@ -3131,6 +3224,15 @@ function wireLoginExtras(){
   const uBtn = document.getElementById('mode-user');
   if (dBtn) dBtn.addEventListener('click', () => setLoginMode('demo'));
   if (uBtn) uBtn.addEventListener('click', () => setLoginMode('user'));
+  const link = (id, view) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('click', e => { e.preventDefault(); setUserView(view); });
+  };
+  link('link-signup','signup'); link('link-forgot','forgot'); link('link-signin','signin');
+  ['login-email','login-confirm'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('keydown', e => { if (e.key === 'Enter') handleLoginSubmit(); });
+  });
   if (!pw || !caps) return;
   // Caps Lock silently breaks a correct password; warn rather than let the
   // user conclude the password is wrong.
@@ -3149,7 +3251,71 @@ function wireLoginExtras(){
   pw.addEventListener('keydown', e => { if (e.key === 'Enter') handleLoginSubmit(); });
 }
 
+async function handleUserSubmit(){
+  const btn   = document.getElementById('login-btn');
+  const msg   = document.getElementById('login-msg');
+  const email = (document.getElementById('login-email').value || '').trim();
+  const pw    = document.getElementById('login-pw').value;
+  const cf    = document.getElementById('login-confirm').value;
+  const fail  = t => { msg.className='lg-msg err'; msg.textContent=t; };
+  const v     = VIEWS[USER_VIEW];
+
+  if (v.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return fail('Enter a valid email address');
+  if (v.pw && !pw) return fail('Enter a password');
+  if (v.confirm && pw !== cf) return fail('Passwords do not match');
+
+  btn.disabled = true; msg.className='lg-msg'; msg.textContent='Working…';
+  try {
+    if (USER_VIEW === 'signin') {
+      const { status, body } = await postJSON('/api/login', { email, password: pw });
+      if (status === 429) { renderAttempts(MAX_ATTEMPTS); return fail('Too many failed attempts — wait 15 minutes'); }
+      if (status !== 200) { renderAttempts(recordFailedAttempt()); return fail(body.message || 'Incorrect email or password'); }
+      clearFailedAttempts(); renderAttempts(0);
+      setAuthToken(body.session, document.getElementById('login-remember').checked);
+      msg.className='lg-msg ok'; msg.textContent='Signed in';
+      hideLogin(); bootDashboard();
+      return;
+    }
+    if (USER_VIEW === 'signup') {
+      const { status, body } = await postJSON('/api/signup', { email, password: pw });
+      if (status !== 200) return fail(body.message || 'Could not create that account');
+      setUserView('signin');
+      document.getElementById('login-email').value = email;
+      const m = document.getElementById('login-msg');
+      m.className='lg-msg ok';
+      // Without SMTP configured the server returns the link so the flow still
+      // completes; surface it rather than leaving the user waiting on mail.
+      m.innerHTML = body.emailSent
+        ? 'Account created — check your email for the verification link.'
+        : `Account created. Verification email could not be sent; ` +
+          `<a href="${esc(body.verifyLink)}" style="color:var(--accent)">verify here</a>.`;
+      return;
+    }
+    if (USER_VIEW === 'forgot') {
+      const { body } = await postJSON('/api/forgot', { email });
+      const m = document.getElementById('login-msg');
+      m.className='lg-msg ok';
+      m.innerHTML = body.resetLink && !body.emailSent
+        ? `Email could not be sent; <a href="${esc(body.resetLink)}" style="color:var(--accent)">reset here</a>.`
+        : (body.message || 'If that email has an account, a reset link is on its way.');
+      return;
+    }
+    if (USER_VIEW === 'reset') {
+      const { status, body } = await postJSON('/api/reset', { token: RESET_TOKEN, password: pw });
+      if (status !== 200) return fail(body.message || 'That reset link is invalid or expired');
+      RESET_TOKEN = '';
+      setUserView('signin');
+      const m = document.getElementById('login-msg');
+      m.className='lg-msg ok'; m.textContent = body.message || 'Password updated. Sign in now.';
+      return;
+    }
+  } catch(e) {
+    fail('Network error — try again');
+  } finally { btn.disabled = false; }
+}
+
 async function handleLoginSubmit(){
+  if (LOGIN_MODE === 'user') return handleUserSubmit();
   const input  = document.getElementById('login-pw');
   const pw     = input.value;
   const persist= document.getElementById('login-remember').checked;
@@ -3346,6 +3512,8 @@ document.getElementById('login-pw-toggle').addEventListener('click', () => {
 // Login-page wiring: mode switcher, caps-lock warning, attempt counter.
 wireLoginExtras();
 setLoginMode('demo');
+// A verification or reset link overrides the default view.
+handleAuthLinks();
 const _signoutBtn = document.getElementById('signout-btn');
 if (_signoutBtn) _signoutBtn.addEventListener('click', signOut);
 
