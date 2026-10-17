@@ -60,6 +60,18 @@ _load_dotenv()
 # deliberately not a secret; it gates a read-only dashboard.
 AUTH_HASH = (os.environ.get("AUTH_TOKEN_HASH", "") or "").strip().lower()
 DEMO_HASH = (os.environ.get("DEMO_TOKEN_HASH", "") or "").strip().lower()
+
+# User accounts are optional: the dashboard still runs on the demo password
+# alone if the module or its database is unavailable.
+try:
+    import accounts
+    accounts.create_tables()
+    ACCOUNTS_ENABLED = True
+    print(f"  Accounts: enabled ({accounts.storage_label()})", flush=True)
+except Exception as _acct_err:
+    accounts = None
+    ACCOUNTS_ENABLED = False
+    print(f"  Accounts: disabled ({type(_acct_err).__name__}: {_acct_err})", flush=True)
 # Session length the client is told to enforce, per role.
 SESSION_MINUTES_BY_ROLE = {
     "demo": int(os.environ.get("DEMO_SESSION_MINUTES", "15") or "15"),
@@ -90,14 +102,25 @@ def _auth_state(handler):
     status: 'open' | 'ok' | 'unauthorized' | 'rate_limited'
     role:   'open' | 'user' | 'demo' | None
     """
-    if not AUTH_HASH and not DEMO_HASH:
+    if not AUTH_HASH and not DEMO_HASH and not ACCOUNTS_ENABLED:
         return True, "open", "open"
     ip = _client_ip(handler)
     if _rate_limited(ip):
         return False, "rate_limited", None
     h = handler.headers.get("Authorization", "")
     if h.lower().startswith("bearer "):
-        token = h[7:].strip().lower()
+        raw = h[7:].strip()
+        # An account session token is checked first: it is opaque and random,
+        # so it cannot collide with a 64-char hex password hash.
+        if ACCOUNTS_ENABLED and len(raw) > 40:
+            try:
+                user = accounts.user_for_session(raw)
+                if user:
+                    accounts.touch_session(raw)      # idle timeout, not a hard cap
+                    return True, "ok", "user"
+            except Exception as e:
+                print(f"  WARN session lookup: {type(e).__name__}: {e}", flush=True)
+        token = raw.lower()
         # Constant-time: a plain == leaks match length/prefix through timing.
         # Both are checked so the comparison count does not reveal which
         # credential was tried.
@@ -2794,6 +2817,117 @@ class Handler(BaseHTTPRequestHandler):
     def do_OPTIONS(self):
         self.send_response(200); self._cors(); self.end_headers()
 
+    # ── Account endpoints (POST) ──────────────────────
+    MAX_BODY = 8 * 1024          # these payloads are tiny; refuse anything larger
+
+    def _read_json(self):
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            return None
+        if length <= 0 or length > self.MAX_BODY:
+            return None
+        try:
+            return json.loads(self.rfile.read(length).decode("utf-8"))
+        except Exception:
+            return None
+
+    def _json(self, code, payload):
+        self._send(code, "application/json", json.dumps(payload).encode())
+
+    def _site_base(self):
+        """Public URL used to build verification links."""
+        return (os.environ.get("PUBLIC_SITE_URL")
+                or "https://nanda0210.github.io/edge-advisor").rstrip("/")
+
+    def do_POST(self):
+        path = urlparse(self.path).path
+        if not ACCOUNTS_ENABLED:
+            self._json(503, {"error": "accounts_unavailable",
+                             "message": "User accounts are not configured on this server."})
+            return
+
+        body = self._read_json()
+        if body is None:
+            self._json(400, {"error": "bad_request", "message": "Expected a small JSON body."})
+            return
+
+        ip = _client_ip(self)
+        email = (body.get("email") or "").strip()
+        password = body.get("password") or ""
+
+        try:
+            if path == "/api/signup":
+                # Rate-limited with the same counter as password attempts so
+                # signup cannot be used to bypass the lockout.
+                if _rate_limited(ip):
+                    self._json(429, {"error": "rate_limited"}); return
+                try:
+                    _, token = accounts.create_user(email, password)
+                except ValueError as e:
+                    _record_fail(ip)
+                    self._json(400, {"error": "invalid", "message": str(e)}); return
+                link = f"{self._site_base()}/?verify={token}"
+                sent, fallback = accounts.send_link(email, link, "verify")
+                self._json(200, {"ok": True, "emailSent": sent,
+                                 "verifyLink": fallback,
+                                 "message": "Account created. Check your email to verify it."})
+                return
+
+            if path == "/api/login":
+                if _rate_limited(ip):
+                    self._json(429, {"error": "rate_limited"}); return
+                user, err = accounts.authenticate(email, password)
+                if not user:
+                    _record_fail(ip)
+                    self._json(401, {"error": "unauthorized", "message": err}); return
+                token = accounts.start_session(user["id"])
+                self._json(200, {"ok": True, "session": token, "email": user["email"],
+                                 "role": "user",
+                                 "sessionMinutes": accounts.SESSION_TTL_MIN})
+                return
+
+            if path == "/api/logout":
+                accounts.end_session(body.get("session") or "")
+                self._json(200, {"ok": True}); return
+
+            if path == "/api/forgot":
+                # Always reports success: a different response for unknown
+                # addresses would reveal who has an account.
+                token = accounts.set_reset_token(email)
+                payload = {"ok": True,
+                           "message": "If that email has an account, a reset link is on its way."}
+                if token:
+                    link = f"{self._site_base()}/?reset={token}"
+                    sent, fallback = accounts.send_link(email, link, "reset")
+                    payload["emailSent"] = sent
+                    if fallback:
+                        payload["resetLink"] = fallback
+                self._json(200, payload); return
+
+            if path == "/api/reset":
+                try:
+                    accounts.reset_password(body.get("token") or "", password)
+                except ValueError as e:
+                    self._json(400, {"error": "invalid", "message": str(e)}); return
+                self._json(200, {"ok": True,
+                                 "message": "Password updated. You can sign in now."})
+                return
+
+            if path == "/api/verify":
+                user = accounts.consume_token(body.get("token") or "", "verify")
+                if not user:
+                    self._json(400, {"error": "invalid",
+                                     "message": "That link is invalid or has expired."}); return
+                self._json(200, {"ok": True, "email": user["email"],
+                                 "message": "Email verified. You can sign in now."})
+                return
+        except Exception as e:
+            print(f"  WARN account endpoint {path}: {type(e).__name__}: {e}", flush=True)
+            self._json(500, {"error": "server_error"}); return
+
+        self._json(404, {"error": "not_found"})
+
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path
@@ -2810,9 +2944,10 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/health":
             self._send(200, "application/json", json.dumps({
                 "ok": True,
-                "authRequired": bool(AUTH_HASH or DEMO_HASH),
+                "authRequired": bool(AUTH_HASH or DEMO_HASH or ACCOUNTS_ENABLED),
                 "demoAvailable": bool(DEMO_HASH),
-                "userLoginAvailable": bool(AUTH_HASH),
+                "userLoginAvailable": bool(AUTH_HASH) or ACCOUNTS_ENABLED,
+                "accountsEnabled": ACCOUNTS_ENABLED,
                 "sessionMinutes": SESSION_MINUTES_BY_ROLE,
             }).encode())
             return
@@ -2979,7 +3114,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _cors(self):
         self.send_header("Access-Control-Allow-Origin",  "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
 # Threaded server so /technicals doesn't block /quotes.
