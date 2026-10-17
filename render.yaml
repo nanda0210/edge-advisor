@@ -18,7 +18,30 @@ services:
         value: 80
       - key: DAYTRADE_CHART_LIMIT
         value: 20
+      # Owner password: SHA-256 of the password, lowercase hex.
       - key: AUTH_TOKEN_HASH
+        sync: false
+      # Demo password: deliberately public, gates the read-only dashboard.
+      - key: DEMO_TOKEN_HASH
+        sync: false
+      # Postgres (Neon/Supabase) for user accounts. Without it, accounts are
+      # disabled — Render's ephemeral disk cannot hold them.
+      - key: DATABASE_URL
+        sync: false
+      # Base URL used to build verification and password-reset links.
+      - key: PUBLIC_SITE_URL
+        value: https://nanda0210.github.io/edge-advisor
+      # SMTP for verification / reset mail. Unset = links are shown in the UI
+      # instead of emailed, which is fine for testing but not for real signups.
+      - key: SMTP_HOST
+        value: smtp.resend.com
+      - key: SMTP_PORT
+        value: 587
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
         sync: false
       - key: SCHWAB_APP_KEY
         sync: false
