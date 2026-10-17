@@ -1286,16 +1286,43 @@ const API_BASE = (() => {
 })();
 
 // ── AUTH ─────────────────────────────────────────────
-const AUTH_KEY = 'nandaedge.auth.v1';
+const AUTH_KEY  = 'nandaedge.auth.v1';
+const AUTH_EXP  = 'nandaedge.auth.exp.v1';
+const SESSION_MINUTES = 15;
+// Idle timeout: each authenticated request pushes the expiry out again, so an
+// active user is not logged out mid-session, but an abandoned tab is.
+//
+// This is a UI session timeout, not a server-enforced one. The Bearer token is
+// the password hash itself, so the backend has no session to expire — anyone
+// holding the hash can still call the API directly. Real server-side expiry
+// would require issuing separate, short-lived session tokens.
+function sessionExpiresAt(){
+  return Number(localStorage.getItem(AUTH_EXP) || sessionStorage.getItem(AUTH_EXP) || 0);
+}
+function touchSession(){
+  const store = localStorage.getItem(AUTH_KEY) ? localStorage : sessionStorage;
+  store.setItem(AUTH_EXP, String(Date.now() + SESSION_MINUTES * 60 * 1000));
+}
+function sessionExpired(){
+  const exp = sessionExpiresAt();
+  return exp > 0 && Date.now() > exp;
+}
 function getAuthToken(){
+  if (sessionExpired()) { clearAuthToken(); return ''; }
   return localStorage.getItem(AUTH_KEY) || sessionStorage.getItem(AUTH_KEY) || '';
 }
 function setAuthToken(token, persist){
-  if (persist) localStorage.setItem(AUTH_KEY, token);
-  else         sessionStorage.setItem(AUTH_KEY, token);
+  const store = persist ? localStorage : sessionStorage;
+  store.setItem(AUTH_KEY, token);
+  store.setItem(AUTH_EXP, String(Date.now() + SESSION_MINUTES * 60 * 1000));
 }
 function clearAuthToken(){
   localStorage.removeItem(AUTH_KEY); sessionStorage.removeItem(AUTH_KEY);
+  localStorage.removeItem(AUTH_EXP); sessionStorage.removeItem(AUTH_EXP);
+}
+function minutesLeftInSession(){
+  const exp = sessionExpiresAt();
+  return exp ? Math.max(0, Math.ceil((exp - Date.now()) / 60000)) : 0;
 }
 async function sha256Hex(s){
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
@@ -1306,10 +1333,17 @@ async function fetchJSON(path, timeoutMs=60000){
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const headers = {};
+  if (sessionExpired()) {
+    clearAuthToken();
+    showLogin(`Session timed out after ${SESSION_MINUTES} minutes — please sign in again`);
+    clearTimeout(timer);
+    throw new Error('session_expired');
+  }
   const tok = getAuthToken();
   if (tok) headers['Authorization'] = 'Bearer ' + tok;
   try {
     const res = await fetch(`${API_BASE}${path}`, { signal: controller.signal, headers });
+    if (res.ok && tok) touchSession();     // activity extends the idle window
     if (res.status === 401) { clearAuthToken(); showLogin('Session expired — please re-enter password'); throw new Error('unauthorized'); }
     if (res.status === 429) { showLogin('Too many failed attempts — wait 15 minutes'); throw new Error('rate_limited'); }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -3166,6 +3200,18 @@ document.getElementById('login-pw-toggle').addEventListener('click', () => {
     if (ok === 'rate_limited') return;        // keep tryUnlock's lockout message
   }
   showLogin('');
+})();
+
+// Idle watchdog: without this an abandoned tab stays on screen until the user
+// clicks something. Checks every 30s so the lockout is close to on-time.
+(function sessionWatchdog(){
+  setInterval(() => {
+    if (!sessionExpiresAt()) return;          // not signed in
+    if (sessionExpired()) {
+      clearAuthToken();
+      showLogin(`Session timed out after ${SESSION_MINUTES} minutes — please sign in again`);
+    }
+  }, 30000);
 })();
 </script>
 
